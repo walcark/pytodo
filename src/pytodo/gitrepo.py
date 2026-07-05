@@ -1,0 +1,556 @@
+"""Data repo creation/validation and git synchronization.
+
+Implements the "option 1" sync strategy: an instant local commit, then
+best-effort pull/push. Network work is delegated to a detached background
+process so that mutations return immediately and never block on the network
+(offline just yields a warning, ``add`` stays instant).
+"""
+
+from __future__ import annotations
+
+import fcntl
+import socket
+import subprocess
+import sys
+import time
+from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+from .config import (
+    DONE_DIRNAME,
+    REPO_CONFIG_NAME,
+    TODOS_DIRNAME,
+    default_repo_config_toml,
+)
+
+NET_TIMEOUT = 20  # seconds, for pull/push/clone
+
+
+class RepoError(Exception):
+    """Non-recoverable repo error, meant to be shown cleanly to the user."""
+
+
+# --------------------------------------------------------------------------- #
+# Git primitives                                                              #
+# --------------------------------------------------------------------------- #
+
+def run_git(
+    args: list[str],
+    cwd: Path | None = None,
+    *,
+    check: bool = False,
+    timeout: int | None = None,
+) -> subprocess.CompletedProcess:
+    """Run a git command and capture its output.
+
+    Parameters
+    ----------
+    args : list of str
+        Git arguments (without the leading ``git``).
+    cwd : pathlib.Path, optional
+        Repository directory, passed as ``git -C <cwd>``.
+    check : bool, optional
+        Raise :class:`subprocess.CalledProcessError` on non-zero exit.
+    timeout : int, optional
+        Timeout in seconds.
+
+    Returns
+    -------
+    subprocess.CompletedProcess
+        The completed process, with captured text output.
+    """
+    cmd = ["git"]
+    if cwd is not None:
+        cmd += ["-C", str(cwd)]
+    cmd += args
+    return subprocess.run(
+        cmd,
+        check=check,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def is_git_repo(path: Path) -> bool:
+    """Return whether ``path`` is inside a git work tree."""
+    if not path.exists():
+        return False
+    res = run_git(["rev-parse", "--is-inside-work-tree"], cwd=path)
+    return res.returncode == 0 and res.stdout.strip() == "true"
+
+
+def has_origin(path: Path) -> bool:
+    """Return whether an ``origin`` remote is configured."""
+    return run_git(["remote", "get-url", "origin"], cwd=path).returncode == 0
+
+
+def has_upstream(path: Path) -> bool:
+    """Return whether the current branch has a configured upstream branch."""
+    return run_git(
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=path
+    ).returncode == 0
+
+
+def looks_like_url(target: str) -> bool:
+    """Return whether ``target`` looks like a clone URL rather than a local path."""
+    if "://" in target or target.startswith("git@"):
+        return True
+    # A ``foo.git`` string that does not match an existing local path.
+    return target.endswith(".git") and not Path(target).expanduser().exists()
+
+
+# --------------------------------------------------------------------------- #
+# Layout validation                                                           #
+# --------------------------------------------------------------------------- #
+
+def missing_layout(path: Path) -> list[str]:
+    """Return the todo layout components missing from a repo.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Candidate data repo.
+
+    Returns
+    -------
+    list of str
+        Missing components among ``config.toml``, ``todos/`` and ``done/``. An
+        empty list means the repo is conformant.
+    """
+    missing = []
+    if not (path / REPO_CONFIG_NAME).exists():
+        missing.append(REPO_CONFIG_NAME)
+    if not (path / TODOS_DIRNAME).is_dir():
+        missing.append(f"{TODOS_DIRNAME}/")
+    if not (path / DONE_DIRNAME).is_dir():
+        missing.append(f"{DONE_DIRNAME}/")
+    return missing
+
+
+def is_todo_repo(path: Path) -> bool:
+    """Return whether ``path`` already has a conformant todo layout."""
+    return not missing_layout(path)
+
+
+def _has_unrelated_content(path: Path) -> bool:
+    """Return whether the directory holds files unrelated to the todo layout."""
+    known = {REPO_CONFIG_NAME, TODOS_DIRNAME, DONE_DIRNAME, ".git", "README.md", ".gitignore"}
+    for entry in path.iterdir():
+        if entry.name not in known:
+            return True
+    return False
+
+
+# --------------------------------------------------------------------------- #
+# Scaffold / setup                                                            #
+# --------------------------------------------------------------------------- #
+
+GITIGNORE = "# todo data repo - nothing to ignore by default\n"
+README = (
+    "# `todo` data repo\n\n"
+    "Generated by the `todo` CLI. One markdown file per todo.\n\n"
+    "- `todos/`: active todos\n"
+    "- `done/`: completed todos (archive)\n"
+    "- `config.toml`: categories / urgencies / horizons shared across devices\n"
+)
+
+
+def _create_missing_layout(path: Path, missing: list[str]) -> list[str]:
+    created: list[str] = []
+    if f"{TODOS_DIRNAME}/" in missing:
+        d = path / TODOS_DIRNAME
+        d.mkdir(parents=True, exist_ok=True)
+        (d / ".gitkeep").write_text("", encoding="utf-8")
+        created.append(f"{TODOS_DIRNAME}/")
+    if f"{DONE_DIRNAME}/" in missing:
+        d = path / DONE_DIRNAME
+        d.mkdir(parents=True, exist_ok=True)
+        (d / ".gitkeep").write_text("", encoding="utf-8")
+        created.append(f"{DONE_DIRNAME}/")
+    if REPO_CONFIG_NAME in missing:
+        (path / REPO_CONFIG_NAME).write_text(default_repo_config_toml(), encoding="utf-8")
+        created.append(REPO_CONFIG_NAME)
+    # Convenience files, only when missing.
+    if not (path / ".gitignore").exists():
+        (path / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
+    if not (path / "README.md").exists():
+        (path / "README.md").write_text(README, encoding="utf-8")
+    return created
+
+
+@dataclass
+class SetupResult:
+    """Outcome of :func:`setup_repo`.
+
+    Attributes
+    ----------
+    data_dir : pathlib.Path
+        Resolved data repo path.
+    created_repo : bool
+        A ``git init`` was performed.
+    cloned : bool
+        The repo was cloned from a URL.
+    adopted : bool
+        An already-conformant repo was adopted as-is.
+    created_items : list of str
+        Layout components that were created.
+    actions : list of str
+        Human-readable log of what happened.
+    """
+
+    data_dir: Path
+    created_repo: bool = False
+    cloned: bool = False
+    adopted: bool = False
+    created_items: list[str] = field(default_factory=list)
+    actions: list[str] = field(default_factory=list)
+
+
+def setup_repo(target: str, *, confirm: Callable[[str], bool] | None = None) -> SetupResult:
+    """Create or validate the data repo designated by ``target``.
+
+    Behaviour depends on what ``target`` points to:
+
+    - URL -> clone into ``~/<repo-name>`` then validate.
+    - Missing path -> ``mkdir`` + ``git init`` + full scaffold.
+    - Existing non-git path -> ``git init`` + scaffold of missing parts.
+    - Existing conformant git repo -> adoption.
+    - Existing git repo with unrelated content and no todo layout -> ask for
+      confirmation before grafting the layout.
+
+    Parameters
+    ----------
+    target : str
+        Local path or clone URL of the data repo.
+    confirm : callable, optional
+        ``confirm(prompt) -> bool`` used to ask before grafting the layout onto
+        a repo that already holds unrelated content.
+
+    Returns
+    -------
+    SetupResult
+        A summary of the resolved path and actions taken.
+
+    Raises
+    ------
+    RepoError
+        On clone/init failure, if the path is not a directory, or if the user
+        declines the confirmation.
+    """
+    result = SetupResult(data_dir=Path())
+
+    if looks_like_url(target):
+        name = target.rstrip("/").rsplit("/", 1)[-1]
+        if name.endswith(".git"):
+            name = name[:-4]
+        dest = (Path.home() / name).resolve()
+        if not dest.exists():
+            res = run_git(["clone", target, str(dest)], timeout=NET_TIMEOUT)
+            if res.returncode != 0:
+                raise RepoError(f"clone failed: {res.stderr.strip()}")
+            result.cloned = True
+            result.actions.append(f"cloned into {dest}")
+        path = dest
+    else:
+        path = Path(target).expanduser().resolve()
+
+    result.data_dir = path
+
+    if not path.exists():
+        path.mkdir(parents=True)
+        result.actions.append(f"created directory: {path}")
+
+    if not path.is_dir():
+        raise RepoError(f"{path} is not a directory")
+
+    if not is_git_repo(path):
+        res = run_git(["init"], cwd=path, check=False)
+        if res.returncode != 0:
+            raise RepoError(f"git init failed: {res.stderr.strip()}")
+        result.created_repo = True
+        result.actions.append("git init")
+
+    missing = missing_layout(path)
+    if not missing:
+        result.adopted = True
+        return result
+
+    # Existing repo with unrelated content and no todo structure: ask before
+    # grafting the layout onto it.
+    if len(missing) == 3 and _has_unrelated_content(path) and confirm is not None:
+        ok = confirm(
+            f"{path} already holds files unrelated to todo.\n"
+            "Initialize the todo layout here (config.toml, todos/, done/)?"
+        )
+        if not ok:
+            raise RepoError("initialization cancelled")
+
+    result.created_items = _create_missing_layout(path, missing)
+    result.actions.append("layout created: " + ", ".join(result.created_items))
+
+    # Initial commit of the scoped scaffold (``-- .`` from cwd=path) so that an
+    # enclosing repo is never touched.
+    run_git(["add", "-A", "--", "."], cwd=path)
+    if run_git(["diff", "--cached", "--quiet", "--", "."], cwd=path).returncode != 0:
+        run_git(["commit", "-m", "init todo data repo", "--", "."], cwd=path)
+        result.actions.append("initial commit")
+
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Synchronization                                                             #
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class SyncResult:
+    """Outcome of :func:`sync`.
+
+    Attributes
+    ----------
+    committed : bool
+        A commit was created.
+    pushed : bool
+        A push succeeded.
+    pulled : bool
+        A pull succeeded.
+    conflict_files : list of str
+        Files in conflict after a failed rebase.
+    warnings : list of str
+        Non-fatal issues (mostly network related).
+    """
+
+    committed: bool = False
+    pushed: bool = False
+    pulled: bool = False
+    conflict_files: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def _default_message() -> str:
+    host = socket.gethostname()
+    return f"sync {host} {datetime.now():%Y-%m-%dT%H:%M:%S}"
+
+
+def sync(
+    data_dir: Path,
+    *,
+    message: str | None = None,
+    push_if_unchanged: bool = False,
+    network: bool = True,
+    commit: bool = True,
+) -> SyncResult:
+    """Pull (rebase) -> commit -> push, best-effort.
+
+    The local commit is always attempted immediately. Network operations
+    (pull/push) only run when an ``origin`` remote exists and never fail in a
+    blocking way: any problem is reported through ``warnings``. A rebase
+    conflict is, however, reported explicitly via ``conflict_files``.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    message : str, optional
+        Commit message, defaults to ``sync <host> <timestamp>``.
+    push_if_unchanged : bool, optional
+        Attempt a push even when no new commit was created (used to flush
+        commits left behind by a previous offline run).
+    network : bool, optional
+        When ``False``, skip all network operations (local commit only).
+    commit : bool, optional
+        When ``False``, skip the add/commit step (used by the background flush,
+        where commits were already made in-process).
+
+    Returns
+    -------
+    SyncResult
+        A summary of what happened.
+    """
+    result = SyncResult()
+    origin = has_origin(data_dir) and network
+    message = message or _default_message()
+
+    # -- pull ---------------------------------------------------------------
+    # Only pull when an upstream is configured; otherwise this is the first
+    # sync and there is nothing to fetch (the push -u below will set it up).
+    if origin and has_upstream(data_dir):
+        try:
+            res = run_git(
+                ["pull", "--rebase", "--autostash"],
+                cwd=data_dir,
+                timeout=NET_TIMEOUT,
+            )
+            if res.returncode != 0:
+                conflicts = run_git(
+                    ["diff", "--name-only", "--diff-filter=U"], cwd=data_dir
+                ).stdout.split()
+                if conflicts:
+                    result.conflict_files = conflicts
+                    run_git(["rebase", "--abort"], cwd=data_dir)
+                    result.warnings.append(
+                        "rebase conflict detected - rebase aborted, manual resolution needed"
+                    )
+                else:
+                    result.warnings.append(f"pull failed: {res.stderr.strip() or 'network'}")
+            else:
+                result.pulled = True
+        except (subprocess.TimeoutExpired, OSError):
+            result.warnings.append("pull failed (timeout/network)")
+
+    # -- commit -------------------------------------------------------------
+    # Scoped to the data dir (``-- .``): if the data repo is a subdirectory of
+    # an enclosing repo, we never stage/commit anything else. Small retry: a
+    # concurrent background sync may briefly hold index.lock, so we retry
+    # instead of failing loudly.
+    if commit:
+        last_err = ""
+        for attempt in range(3):
+            run_git(["add", "-A", "--", "."], cwd=data_dir)
+            if run_git(["diff", "--cached", "--quiet", "--", "."], cwd=data_dir).returncode == 0:
+                break  # nothing to commit
+            res = run_git(["commit", "-m", message, "--", "."], cwd=data_dir)
+            if res.returncode == 0:
+                result.committed = True
+                break
+            last_err = res.stderr.strip()
+            if attempt < 2:
+                time.sleep(0.15)
+        if last_err and not result.committed:
+            result.warnings.append(f"commit failed: {last_err}")
+
+    # -- push ---------------------------------------------------------------
+    if origin and not result.conflict_files and (result.committed or push_if_unchanged):
+        try:
+            res = run_git(["push", "-u", "origin", "HEAD"], cwd=data_dir, timeout=NET_TIMEOUT)
+            if res.returncode == 0:
+                result.pushed = True
+            else:
+                result.warnings.append(
+                    f"push failed (will retry later): {res.stderr.strip() or 'network'}"
+                )
+        except (subprocess.TimeoutExpired, OSError):
+            result.warnings.append("push failed (timeout/network) - will retry later")
+
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Background synchronization                                                  #
+# --------------------------------------------------------------------------- #
+#
+# After a mutation, the CLI commits locally (instant) then delegates the
+# network pull/push (~3 s) to a detached process, so that ``add``/``del``
+# return immediately. A file lock serializes those syncs against each other.
+
+def _sync_state_path(data_dir: Path, name: str) -> Path:
+    """Return a state file path (lock/log) inside the ``.git`` dir, off the tree."""
+    res = run_git(["rev-parse", "--absolute-git-dir"], cwd=data_dir)
+    base = Path(res.stdout.strip()) if res.returncode == 0 and res.stdout.strip() else data_dir
+    return base / name
+
+
+@contextmanager
+def sync_lock(data_dir: Path, *, blocking: bool = False):
+    """Inter-process lock for synchronization.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    blocking : bool, optional
+        When ``False`` (default), yield ``False`` immediately if the lock is
+        already held; the caller then gives up (the running sync will push any
+        pending commits anyway). When ``True``, wait for the lock.
+
+    Yields
+    ------
+    bool
+        Whether the lock was acquired.
+    """
+    path = _sync_state_path(data_dir, "todo-sync.lock")
+    handle = open(path, "w")
+    try:
+        flags = fcntl.LOCK_EX if blocking else (fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(handle.fileno(), flags)
+        except OSError:
+            yield False
+            return
+        yield True
+    finally:
+        handle.close()
+
+
+def _log_flush(data_dir: Path, result: SyncResult) -> None:
+    """Record any problems from a background sync (otherwise invisible)."""
+    if not (result.warnings or result.conflict_files):
+        return
+    path = _sync_state_path(data_dir, "todo-sync.log")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now():%Y-%m-%dT%H:%M:%S}\n")
+        for w in result.warnings:
+            f.write(f"  warn: {w}\n")
+        for c in result.conflict_files:
+            f.write(f"  conflict: {c}\n")
+
+
+def _unpushed_count(data_dir: Path) -> int:
+    """Return the number of local commits not yet pushed (0 if no upstream)."""
+    if not has_upstream(data_dir):
+        return 0
+    res = run_git(["rev-list", "--count", "@{u}..HEAD"], cwd=data_dir)
+    try:
+        return int(res.stdout.strip())
+    except ValueError:
+        return 0
+
+
+def background_flush(data_dir: Path) -> None:
+    """Run the detached network sync: pull + push, best-effort, under lock.
+
+    Drains in a loop: ``add`` commands may commit *while* this push runs (their
+    own flushes having found the lock held and given up). We therefore keep
+    pushing as long as unpushed commits remain, so the last add of a burst is
+    never left stranded locally.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    """
+    with sync_lock(data_dir) as acquired:
+        if not acquired:
+            return  # another sync is already running; it drains for us
+        for _ in range(10):
+            result = sync(data_dir, commit=False, push_if_unchanged=True)
+            _log_flush(data_dir, result)
+            if result.conflict_files or not result.pushed:
+                break  # conflict or network down: retry on the next flush
+            if _unpushed_count(data_dir) == 0:
+                break
+
+
+def spawn_background_flush(data_dir: Path) -> None:
+    """Launch ``python -m pytodo _flush <data_dir>`` as a detached process.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    """
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "pytodo", "_flush", str(data_dir)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except OSError:
+        pass  # never blocking: worst case the sync happens on the next `todo sync`
