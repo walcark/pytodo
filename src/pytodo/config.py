@@ -19,7 +19,58 @@ REPO_CONFIG_NAME = "config.toml"
 
 DEFAULT_CATEGORIES = ["work", "home", "perso", "admin"]
 DEFAULT_URGENCY = ["now", "soon", "someday"]
+DEFAULT_URGENCY_COLORS = ["bold red", "yellow", "grey62"]
 DEFAULT_HORIZON = ["today", "week", "month"]
+
+
+@dataclass(frozen=True)
+class Scale:
+    """An ordered, finite set of allowed values with optional display colors.
+
+    A *scale* is the single source of truth for one axis of a todo (urgency or
+    horizon). The order is meaningful: index 0 is the most urgent / nearest
+    value and also defines the sort rank. ``colors`` maps a value to a rich
+    style used by the renderer.
+
+    Attributes
+    ----------
+    values : list of str
+        Allowed values, ordered from most to least urgent (or nearest to
+        farthest).
+    colors : dict of str to str
+        Per-value rich style, empty when the axis is not colored.
+    """
+
+    values: list[str]
+    colors: dict[str, str] = field(default_factory=dict)
+
+    def style(self, value: str) -> str:
+        """Return the rich style for ``value`` (empty string when unset)."""
+        return self.colors.get(value, "")
+
+
+def _default_urgency() -> Scale:
+    colors = dict(zip(DEFAULT_URGENCY, DEFAULT_URGENCY_COLORS, strict=True))
+    return Scale(list(DEFAULT_URGENCY), colors)
+
+
+def _default_horizon() -> Scale:
+    return Scale(list(DEFAULT_HORIZON))
+
+
+def _parse_scale(
+    section: dict, default_values: list[str], default_colors: list[str] | None
+) -> Scale:
+    """Build a :class:`Scale` from a ``config.toml`` section.
+
+    ``values`` fall back to ``default_values``; ``colors`` (parallel to
+    ``values``) fall back to ``default_colors`` and are zipped into a mapping.
+    A shorter/longer ``colors`` list is tolerated (extra values are uncolored).
+    """
+    values = section.get("values", list(default_values))
+    colors_list = section.get("colors", default_colors)
+    colors = dict(zip(values, colors_list, strict=False)) if colors_list else {}
+    return Scale(values, colors)
 
 
 # --------------------------------------------------------------------------- #
@@ -83,18 +134,18 @@ class RepoConfig:
     ----------
     categories : list of str
         Allowed categories (fixed, finite set).
-    urgency : list of str
-        Allowed urgency values.
-    horizon : list of str
-        Allowed horizon values.
+    urgency : Scale
+        Allowed urgency values, ordered and colored.
+    horizon : Scale
+        Allowed horizon values, ordered.
     sync_auto : bool
         When ``True``, mutations trigger a background pull/push
         (``option 1``: instant local commit, best-effort network).
     """
 
     categories: list[str] = field(default_factory=lambda: list(DEFAULT_CATEGORIES))
-    urgency: list[str] = field(default_factory=lambda: list(DEFAULT_URGENCY))
-    horizon: list[str] = field(default_factory=lambda: list(DEFAULT_HORIZON))
+    urgency: Scale = field(default_factory=_default_urgency)
+    horizon: Scale = field(default_factory=_default_horizon)
     sync_auto: bool = True
 
     def to_toml(self) -> str:
@@ -102,16 +153,26 @@ class RepoConfig:
         def arr(values: list[str]) -> str:
             return "[" + ", ".join(f'"{v}"' for v in values) + "]"
 
-        return (
-            "[categories]\n"
-            f"values = {arr(self.categories)}\n\n"
-            "[urgency]\n"
-            f"values = {arr(self.urgency)}\n\n"
-            "[horizon]\n"
-            f"values = {arr(self.horizon)}\n\n"
-            "[sync]\n"
-            f"auto = {str(self.sync_auto).lower()}\n"
-        )
+        def section(name: str, scale: Scale) -> list[str]:
+            lines = [f"[{name}]", f"values = {arr(scale.values)}"]
+            if scale.colors:
+                ordered = [scale.colors.get(v, "") for v in scale.values]
+                lines.append(f"colors = {arr(ordered)}")
+            return lines
+
+        lines = [
+            "[categories]",
+            f"values = {arr(self.categories)}",
+            "",
+            *section("urgency", self.urgency),
+            "",
+            *section("horizon", self.horizon),
+            "",
+            "[sync]",
+            f"auto = {str(self.sync_auto).lower()}",
+            "",
+        ]
+        return "\n".join(lines)
 
 
 def default_repo_config_toml() -> str:
@@ -138,7 +199,7 @@ def load_repo_config(data_dir: Path) -> RepoConfig:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     return RepoConfig(
         categories=data.get("categories", {}).get("values", list(DEFAULT_CATEGORIES)),
-        urgency=data.get("urgency", {}).get("values", list(DEFAULT_URGENCY)),
-        horizon=data.get("horizon", {}).get("values", list(DEFAULT_HORIZON)),
+        urgency=_parse_scale(data.get("urgency", {}), DEFAULT_URGENCY, DEFAULT_URGENCY_COLORS),
+        horizon=_parse_scale(data.get("horizon", {}), DEFAULT_HORIZON, None),
         sync_auto=data.get("sync", {}).get("auto", True),
     )
