@@ -27,6 +27,9 @@ jobs:
         cache: true
         environments: dev
 
+    - name: Format check
+      run: pixi run -e dev fmt-check
+
     - name: Lint
       run: pixi run -e dev lint
 

@@ -42,6 +42,7 @@ pytest-cov = ">=6.0"
 
 [tool.pixi.feature.dev.tasks]
 fmt = "ruff format ."
+fmt-check = "ruff format --check ."
 lint = "ruff check src tests"
 type-check = "mypy src/pytodo"
 test = "pytest -q --cov=src/pytodo --cov-report=term-missing"
