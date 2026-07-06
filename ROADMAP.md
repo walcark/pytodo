@@ -25,14 +25,15 @@ Implementation notes:
 
 ## 2. CI / CD
 
-- **CI** (GitHub Actions): run `ruff check`, `ruff format --check`, and
-  `pytest` on every push / PR, on the supported Python versions.
-- Add `ruff format` as the formatter and a `pixi run fmt` task; enforce it in
-  CI and optionally via a `pre-commit` hook.
+- **CI** (GitHub Actions): **done** - `.github/workflows/ci.yml` runs `lint`
+  (ruff), `test` (pytest + coverage) and `type-check` (mypy) via pixi on every
+  push / PR to `main`.
+- Still TODO: enforce `ruff format --check` in CI (the `fmt` task exists but is
+  local-only for now), and a `pre-commit` hook.
 - **CD**: publish to PyPI on tagged releases (build with `hatchling`, publish
   with trusted publishing / OIDC). Then `pipx install todo-cli` works for
   everyone.
-- Add a coverage report and a status badge.
+- Add a coverage upload (codecov) and a status badge.
 
 ## 3. Other useful improvements
 

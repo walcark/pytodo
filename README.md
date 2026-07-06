@@ -192,9 +192,15 @@ Optional markdown body: notes, links, a checklist...
 ## Development
 
 ```sh
-pixi run test    # pytest
-pixi run lint    # ruff
+pixi run -e dev lint         # ruff check
+pixi run -e dev fmt          # ruff format
+pixi run -e dev type-check   # mypy
+pixi run -e dev test         # pytest + coverage
+pixi run -e dev all          # all of the above
 ```
+
+CI (GitHub Actions) runs lint, test and type-check on every push / PR to
+`main` (see `.github/workflows/ci.yml`).
 
 ## License
 
