@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
 import yaml
-
-# Reference orderings used for sorting. They are independent from the repo
-# config, which only restricts the set of allowed values.
-URGENCY_RANK = {"now": 0, "soon": 1, "someday": 2}
-HORIZON_RANK = {"today": 0, "week": 1, "month": 2}
 
 
 @dataclass
@@ -94,27 +90,6 @@ class Todo:
 
     # -- Sort keys --------------------------------------------------------
 
-    def urgency_rank(self) -> int:
-        """Return the numeric rank of the urgency (lower is more urgent)."""
-        return URGENCY_RANK.get(self.urgency, len(URGENCY_RANK))
-
-    def sort_key(self) -> tuple:
-        """Return the in-category sort key.
-
-        Todos are ordered by urgency first, then by ascending deadline and
-        horizon. At equal urgency, dated todos come before undated ones.
-
-        Returns
-        -------
-        tuple
-            A tuple suitable for ``sorted(..., key=Todo.sort_key)``.
-        """
-        far = date.max
-        deadline = self.deadline or far
-        horizon = HORIZON_RANK.get(self.horizon or "", len(HORIZON_RANK))
-        has_no_date = self.deadline is None and self.horizon is None
-        return (self.urgency_rank(), has_no_date, deadline, horizon, self.title.lower())
-
     def is_overdue(self, today: date | None = None) -> bool:
         """Return whether the todo has a passed, still-open deadline.
 
@@ -131,6 +106,47 @@ class Todo:
         """
         today = today or date.today()
         return self.deadline is not None and self.deadline < today and self.completed is None
+
+
+def make_sort_key(urgency: list[str], horizon: list[str]) -> Callable[[Todo], tuple]:
+    """Build an in-category sort key bound to the repo's value orderings.
+
+    Both ``urgency`` and ``horizon`` are ordered lists coming from the repo
+    config: the rank of a value is its index (position 0 is the most urgent /
+    nearest). Todos are ordered by urgency first, then dated-before-undated,
+    then by ascending deadline and horizon. Unknown values sort last.
+
+    Parameters
+    ----------
+    urgency : list of str
+        Allowed urgency values, most urgent first.
+    horizon : list of str
+        Allowed horizon values, nearest first.
+
+    Returns
+    -------
+    callable
+        A function suitable for ``sorted(todos, key=...)``.
+    """
+
+    def rank(value: str | None, order: list[str]) -> int:
+        try:
+            return order.index(value)
+        except ValueError:
+            return len(order)
+
+    def key(todo: Todo) -> tuple:
+        deadline = todo.deadline or date.max
+        has_no_date = todo.deadline is None and todo.horizon is None
+        return (
+            rank(todo.urgency, urgency),
+            has_no_date,
+            deadline,
+            rank(todo.horizon, horizon),
+            todo.title.lower(),
+        )
+
+    return key
 
 
 def _coerce_date(value) -> date | None:
