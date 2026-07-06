@@ -103,6 +103,43 @@ def looks_like_url(target: str) -> bool:
     return target.endswith(".git") and not Path(target).expanduser().exists()
 
 
+def _commit_scoped(data_dir: Path, message: str, *, attempts: int = 1) -> tuple[bool, str]:
+    """Stage and commit the data dir only, never an enclosing repo.
+
+    Every git verb is scoped with ``-- .`` (from ``cwd=data_dir``): if the data
+    repo is a subdirectory of another git repo, nothing outside it is ever
+    staged or committed. A concurrent background sync may briefly hold
+    ``index.lock``, so the commit is retried instead of failing loudly.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    message : str
+        Commit message.
+    attempts : int, optional
+        Number of tries on ``index.lock`` contention (default 1, no retry).
+
+    Returns
+    -------
+    tuple of (bool, str)
+        Whether a commit was created, and the last error message (empty on
+        success or when there was nothing to commit).
+    """
+    last_err = ""
+    for attempt in range(attempts):
+        run_git(["add", "-A", "--", "."], cwd=data_dir)
+        if run_git(["diff", "--cached", "--quiet", "--", "."], cwd=data_dir).returncode == 0:
+            return False, ""  # nothing to commit
+        res = run_git(["commit", "-m", message, "--", "."], cwd=data_dir)
+        if res.returncode == 0:
+            return True, ""
+        last_err = res.stderr.strip()
+        if attempt < attempts - 1:
+            time.sleep(0.15)
+    return False, last_err
+
+
 # --------------------------------------------------------------------------- #
 # Layout validation                                                           #
 # --------------------------------------------------------------------------- #
@@ -292,11 +329,9 @@ def setup_repo(target: str, *, confirm: Callable[[str], bool] | None = None) -> 
     result.created_items = _create_missing_layout(path, missing)
     result.actions.append("layout created: " + ", ".join(result.created_items))
 
-    # Initial commit of the scoped scaffold (``-- .`` from cwd=path) so that an
-    # enclosing repo is never touched.
-    run_git(["add", "-A", "--", "."], cwd=path)
-    if run_git(["diff", "--cached", "--quiet", "--", "."], cwd=path).returncode != 0:
-        run_git(["commit", "-m", "init todo data repo", "--", "."], cwd=path)
+    # Initial commit of the scaffold, scoped so an enclosing repo is untouched.
+    committed, _ = _commit_scoped(path, "init todo data repo")
+    if committed:
         result.actions.append("initial commit")
 
     return result
@@ -403,25 +438,10 @@ def sync(
             result.warnings.append("pull failed (timeout/network)")
 
     # -- commit -------------------------------------------------------------
-    # Scoped to the data dir (``-- .``): if the data repo is a subdirectory of
-    # an enclosing repo, we never stage/commit anything else. Small retry: a
-    # concurrent background sync may briefly hold index.lock, so we retry
-    # instead of failing loudly.
     if commit:
-        last_err = ""
-        for attempt in range(3):
-            run_git(["add", "-A", "--", "."], cwd=data_dir)
-            if run_git(["diff", "--cached", "--quiet", "--", "."], cwd=data_dir).returncode == 0:
-                break  # nothing to commit
-            res = run_git(["commit", "-m", message, "--", "."], cwd=data_dir)
-            if res.returncode == 0:
-                result.committed = True
-                break
-            last_err = res.stderr.strip()
-            if attempt < 2:
-                time.sleep(0.15)
-        if last_err and not result.committed:
-            result.warnings.append(f"commit failed: {last_err}")
+        result.committed, err = _commit_scoped(data_dir, message, attempts=3)
+        if err:
+            result.warnings.append(f"commit failed: {err}")
 
     # -- push ---------------------------------------------------------------
     if origin and not result.conflict_files and (result.committed or push_if_unchanged):
