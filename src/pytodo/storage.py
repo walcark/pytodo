@@ -41,10 +41,7 @@ def new_todo_id(now: datetime | None = None) -> str:
 def _list_dir(directory: Path) -> list[Todo]:
     if not directory.exists():
         return []
-    todos: list[Todo] = []
-    for path in sorted(directory.glob("*.md")):
-        todos.append(load_todo(path))
-    return todos
+    return [load_todo(path) for path in sorted(directory.glob("*.md"))]
 
 
 def list_active(data_dir: Path) -> list[Todo]:
