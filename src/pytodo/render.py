@@ -121,6 +121,8 @@ def render_todos(
         table.add_column("title", ratio=1, overflow="fold")
         table.add_column("deadline", no_wrap=True)
         for t in items:
-            table.add_row(_urgency_cell(t.urgency, cfg), Text(t.title), _deadline_cell(t, today))
+            table.add_row(
+                _urgency_cell(t.urgency, cfg), Text(t.title), _deadline_cell(t, today)
+            )
         out.print(table)
         out.print()

@@ -53,8 +53,12 @@ def test_parse_missing_frontmatter_raises():
 
 def test_sort_by_urgency_then_deadline():
     now = Todo(id="1", title="a", category="c", urgency="now")
-    soon_early = Todo(id="2", title="b", category="c", urgency="soon", deadline=date(2026, 1, 1))
-    soon_late = Todo(id="3", title="c", category="c", urgency="soon", deadline=date(2026, 12, 1))
+    soon_early = Todo(
+        id="2", title="b", category="c", urgency="soon", deadline=date(2026, 1, 1)
+    )
+    soon_late = Todo(
+        id="3", title="c", category="c", urgency="soon", deadline=date(2026, 12, 1)
+    )
     someday = Todo(id="4", title="d", category="c", urgency="someday")
 
     todos = [someday, soon_late, now, soon_early]
@@ -63,7 +67,9 @@ def test_sort_by_urgency_then_deadline():
 
 
 def test_dated_before_undated_same_urgency():
-    dated = Todo(id="d", title="a", category="c", urgency="soon", deadline=date(2026, 5, 1))
+    dated = Todo(
+        id="d", title="a", category="c", urgency="soon", deadline=date(2026, 5, 1)
+    )
     undated = Todo(id="u", title="b", category="c", urgency="soon")
     ordered = sorted([undated, dated], key=SORT_KEY)
     assert [t.id for t in ordered] == ["d", "u"]

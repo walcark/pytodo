@@ -105,7 +105,11 @@ class Todo:
             is not completed yet.
         """
         today = today or date.today()
-        return self.deadline is not None and self.deadline < today and self.completed is None
+        return (
+            self.deadline is not None
+            and self.deadline < today
+            and self.completed is None
+        )
 
 
 def make_sort_key(urgency: list[str], horizon: list[str]) -> Callable[[Todo], tuple]:
@@ -240,4 +244,6 @@ def load_todo(path: Path) -> Todo:
     Todo
         The parsed todo, with ``path`` set.
     """
-    return parse_markdown(path.read_text(encoding="utf-8"), todo_id=path.stem, path=path)
+    return parse_markdown(
+        path.read_text(encoding="utf-8"), todo_id=path.stem, path=path
+    )

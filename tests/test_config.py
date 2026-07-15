@@ -6,7 +6,9 @@ from pytodo import config
 def test_repo_config_toml_roundtrip(tmp_path):
     cfg = config.RepoConfig(
         categories=["work", "home"],
-        urgency=config.Scale(["now", "soon", "someday"], {"now": "bold red", "soon": "yellow"}),
+        urgency=config.Scale(
+            ["now", "soon", "someday"], {"now": "bold red", "soon": "yellow"}
+        ),
         horizon=config.Scale(["today", "week"]),
         sync_auto=False,
     )

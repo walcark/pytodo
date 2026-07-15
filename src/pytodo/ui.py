@@ -60,7 +60,9 @@ def _run_fzf(lines: list[str], args: list[str]) -> list[str]:
     return [line for line in proc.stdout.splitlines() if line]
 
 
-def choose(options: list[str], *, header: str | None = None, default: str | None = None) -> str:
+def choose(
+    options: list[str], *, header: str | None = None, default: str | None = None
+) -> str:
     """Pick a single value from a small list via fzf.
 
     Parameters

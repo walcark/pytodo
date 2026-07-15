@@ -195,7 +195,9 @@ def add(
     category: str | None = typer.Option(None, "-c", "--category"),
     urgency: str | None = typer.Option(None, "-u", "--urgency"),
     horizon: str | None = typer.Option(None, "--horizon"),
-    deadline: str | None = typer.Option(None, "--deadline", help="ISO date YYYY-MM-DD."),
+    deadline: str | None = typer.Option(
+        None, "--deadline", help="ISO date YYYY-MM-DD."
+    ),
     edit: bool = typer.Option(False, "--edit", help="Open $EDITOR after creation."),
 ):
     """Add a todo (interactive; any missing option triggers a prompt)."""
@@ -208,13 +210,17 @@ def add(
             _err("Empty title, aborting.")
             raise typer.Exit(1)
 
-    category = _resolve_choice(category, cfg.categories, label="category", header="Category")
+    category = _resolve_choice(
+        category, cfg.categories, label="category", header="Category"
+    )
     urgency = _resolve_choice(
         urgency, cfg.urgency.values, label="urgency", header="Urgency", default="soon"
     )
 
     if horizon is None:
-        picked = ui.choose(["(none)", *cfg.horizon.values], header="Horizon (Esc/(none) to skip)")
+        picked = ui.choose(
+            ["(none)", *cfg.horizon.values], header="Horizon (Esc/(none) to skip)"
+        )
         horizon = None if picked == "(none)" else picked
     if horizon is not None:
         _validate_choice(horizon, cfg.horizon.values, "horizon")
@@ -224,7 +230,9 @@ def add(
         try:
             parsed_deadline = date.fromisoformat(deadline)
         except ValueError:
-            raise typer.BadParameter("deadline must be an ISO date YYYY-MM-DD") from None
+            raise typer.BadParameter(
+                "deadline must be an ISO date YYYY-MM-DD"
+            ) from None
 
     todo = storage.create_todo(
         data_dir,
@@ -311,7 +319,9 @@ def edit():
 @app.command()
 @handle_errors
 def show(
-    category: str | None = typer.Argument(None, help="Only show this category (default: all)."),
+    category: str | None = typer.Argument(
+        None, help="Only show this category (default: all)."
+    ),
     urgency: str | None = typer.Option(None, "-u", "--urgency"),
     today: bool = typer.Option(
         False, "--today", help="Today horizon + today's and overdue deadlines."
@@ -339,7 +349,9 @@ def show(
     if today:
         d = date.today()
         todos = [
-            t for t in todos if t.horizon == "today" or (t.deadline is not None and t.deadline <= d)
+            t
+            for t in todos
+            if t.horizon == "today" or (t.deadline is not None and t.deadline <= d)
         ]
 
     render_todos(todos, cfg)

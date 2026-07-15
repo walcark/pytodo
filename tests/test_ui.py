@@ -46,7 +46,9 @@ def test_format_line_with_overdue():
 
     from pytodo.models import Todo
 
-    t = Todo(id="1", title="Pay", category="admin", urgency="now", deadline=date(2020, 1, 1))
+    t = Todo(
+        id="1", title="Pay", category="admin", urgency="now", deadline=date(2020, 1, 1)
+    )
     line = ui.format_line(t)
     assert line.startswith("[admin] [now] Pay")
     assert "⚠" in line

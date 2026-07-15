@@ -63,7 +63,10 @@ def test_sync_pushes_to_origin(tmp_path):
     assert result.pushed is True
 
     files = gitrepo.run_git(["ls-tree", "-r", "--name-only", "HEAD"], cwd=origin).stdout
-    assert any(line.startswith("todos/") and line.endswith(".md") for line in files.splitlines())
+    assert any(
+        line.startswith("todos/") and line.endswith(".md")
+        for line in files.splitlines()
+    )
 
 
 def test_background_flush_drains_all_commits(tmp_path):

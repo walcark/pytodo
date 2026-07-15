@@ -92,7 +92,9 @@ def has_origin(path: Path) -> bool:
 def has_upstream(path: Path) -> bool:
     """Return whether the current branch has a configured upstream branch."""
     return (
-        run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=path).returncode
+        run_git(
+            ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=path
+        ).returncode
         == 0
     )
 
@@ -105,7 +107,9 @@ def looks_like_url(target: str) -> bool:
     return target.endswith(".git") and not Path(target).expanduser().exists()
 
 
-def _commit_scoped(data_dir: Path, message: str, *, attempts: int = 1) -> tuple[bool, str]:
+def _commit_scoped(
+    data_dir: Path, message: str, *, attempts: int = 1
+) -> tuple[bool, str]:
     """Stage and commit the data dir only, never an enclosing repo.
 
     Every git verb is scoped with ``-- .`` (from ``cwd=data_dir``): if the data
@@ -131,7 +135,10 @@ def _commit_scoped(data_dir: Path, message: str, *, attempts: int = 1) -> tuple[
     last_err = ""
     for attempt in range(attempts):
         run_git(["add", "-A", "--", "."], cwd=data_dir)
-        if run_git(["diff", "--cached", "--quiet", "--", "."], cwd=data_dir).returncode == 0:
+        if (
+            run_git(["diff", "--cached", "--quiet", "--", "."], cwd=data_dir).returncode
+            == 0
+        ):
             return False, ""  # nothing to commit
         res = run_git(["commit", "-m", message, "--", "."], cwd=data_dir)
         if res.returncode == 0:
@@ -178,7 +185,14 @@ def is_todo_repo(path: Path) -> bool:
 
 def _has_unrelated_content(path: Path) -> bool:
     """Return whether the directory holds files unrelated to the todo layout."""
-    known = {REPO_CONFIG_NAME, TODOS_DIRNAME, DONE_DIRNAME, ".git", "README.md", ".gitignore"}
+    known = {
+        REPO_CONFIG_NAME,
+        TODOS_DIRNAME,
+        DONE_DIRNAME,
+        ".git",
+        "README.md",
+        ".gitignore",
+    }
     for entry in path.iterdir():
         if entry.name not in known:
             return True
@@ -212,7 +226,9 @@ def _create_missing_layout(path: Path, missing: list[str]) -> list[str]:
         (d / ".gitkeep").write_text("", encoding="utf-8")
         created.append(f"{DONE_DIRNAME}/")
     if REPO_CONFIG_NAME in missing:
-        (path / REPO_CONFIG_NAME).write_text(default_repo_config_toml(), encoding="utf-8")
+        (path / REPO_CONFIG_NAME).write_text(
+            default_repo_config_toml(), encoding="utf-8"
+        )
         created.append(REPO_CONFIG_NAME)
     # Convenience files, only when missing.
     if not (path / ".gitignore").exists():
@@ -250,7 +266,9 @@ class SetupResult:
     actions: list[str] = field(default_factory=list)
 
 
-def setup_repo(target: str, *, confirm: Callable[[str], bool] | None = None) -> SetupResult:
+def setup_repo(
+    target: str, *, confirm: Callable[[str], bool] | None = None
+) -> SetupResult:
     """Create or validate the data repo designated by ``target``.
 
     Behaviour depends on what ``target`` points to:
@@ -432,10 +450,13 @@ def sync(
                     result.conflict_files = conflicts
                     run_git(["rebase", "--abort"], cwd=data_dir)
                     result.warnings.append(
-                        "rebase conflict detected - rebase aborted, manual resolution needed"
+                        "rebase conflict detected - rebase aborted, "
+                        "manual resolution needed"
                     )
                 else:
-                    result.warnings.append(f"pull failed: {res.stderr.strip() or 'network'}")
+                    result.warnings.append(
+                        f"pull failed: {res.stderr.strip() or 'network'}"
+                    )
             else:
                 result.pulled = True
         except (subprocess.TimeoutExpired, OSError):
@@ -450,7 +471,9 @@ def sync(
     # -- push ---------------------------------------------------------------
     if origin and not result.conflict_files and (result.committed or push_if_unchanged):
         try:
-            res = run_git(["push", "-u", "origin", "HEAD"], cwd=data_dir, timeout=NET_TIMEOUT)
+            res = run_git(
+                ["push", "-u", "origin", "HEAD"], cwd=data_dir, timeout=NET_TIMEOUT
+            )
             if res.returncode == 0:
                 result.pushed = True
             else:
@@ -475,7 +498,11 @@ def sync(
 def _sync_state_path(data_dir: Path, name: str) -> Path:
     """Return a state file path (lock/log) inside the ``.git`` dir, off the tree."""
     res = run_git(["rev-parse", "--absolute-git-dir"], cwd=data_dir)
-    base = Path(res.stdout.strip()) if res.returncode == 0 and res.stdout.strip() else data_dir
+    base = (
+        Path(res.stdout.strip())
+        if res.returncode == 0 and res.stdout.strip()
+        else data_dir
+    )
     return base / name
 
 

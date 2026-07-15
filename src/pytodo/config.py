@@ -202,7 +202,9 @@ def load_repo_config(data_dir: Path) -> RepoConfig:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     return RepoConfig(
         categories=data.get("categories", {}).get("values", list(DEFAULT_CATEGORIES)),
-        urgency=_parse_scale(data.get("urgency", {}), DEFAULT_URGENCY, DEFAULT_URGENCY_COLORS),
+        urgency=_parse_scale(
+            data.get("urgency", {}), DEFAULT_URGENCY, DEFAULT_URGENCY_COLORS
+        ),
         horizon=_parse_scale(data.get("horizon", {}), DEFAULT_HORIZON, None),
         sync_auto=data.get("sync", {}).get("auto", True),
     )
