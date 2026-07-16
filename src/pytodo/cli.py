@@ -18,6 +18,7 @@ from .config import (
     read_data_dir,
     write_data_dir,
 )
+from .models import Todo
 from .render import console, render_todos
 
 app = typer.Typer(
@@ -140,6 +141,44 @@ def _resolve_choice(
     return _validate_choice(value, options, label)
 
 
+def _resolve_optional_choice(
+    value: str | None, options: list[str], *, label: str, header: str
+) -> str | None:
+    """Like :func:`_resolve_choice`, but the prompt offers a ``(none)`` opt-out."""
+    if value is None:
+        value = ui.choose(["(none)", *options], header=header)
+        if value == "(none)":
+            return None
+    return _validate_choice(value, options, label)
+
+
+def _apply_setup(target: str) -> gitrepo.SetupResult:
+    """Set up/adopt the repo at ``target``, persist it, and log the actions."""
+    result = gitrepo.setup_repo(target, confirm=ui.confirm)
+    write_data_dir(result.data_dir)
+    for action in result.actions:
+        console.print(f"  [grey62]-[/grey62] {action}")
+    return result
+
+
+def _pick_active(*, multi: bool) -> tuple[Path, RepoConfig, list[Todo]]:
+    """Load the repo and let the user select among the active todos.
+
+    Shared preamble of the mutation commands: exits cleanly (code 0) when no
+    todo exists, and (code 1) when the selection is cancelled.
+    """
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    todos = storage.list_active(data_dir)
+    if not todos:
+        console.print("[grey62]No active todo.[/grey62]")
+        raise typer.Exit(0)
+    selected = ui.select_todos(todos, multi=multi)
+    if not selected:
+        raise typer.Exit(1)
+    return data_dir, cfg, selected
+
+
 # --------------------------------------------------------------------------- #
 # Data repo management                                                        #
 # --------------------------------------------------------------------------- #
@@ -151,10 +190,7 @@ def init(
     repo: str = typer.Argument(..., help="Local path or URL of the data repo."),
 ):
     """Initialize or adopt a data repo and set it as active."""
-    result = gitrepo.setup_repo(repo, confirm=ui.confirm)
-    write_data_dir(result.data_dir)
-    for action in result.actions:
-        console.print(f"  [grey62]-[/grey62] {action}")
+    result = _apply_setup(repo)
     if result.adopted and not result.created_items:
         _ok(f"Adopted existing repo: {result.data_dir}")
     else:
@@ -176,10 +212,7 @@ def repo(
             raise typer.Exit(1)
         console.print(str(current))
         return
-    result = gitrepo.setup_repo(path, confirm=ui.confirm)
-    write_data_dir(result.data_dir)
-    for action in result.actions:
-        console.print(f"  [grey62]-[/grey62] {action}")
+    result = _apply_setup(path)
     _ok(f"Active data repo: {result.data_dir}")
 
 
@@ -217,13 +250,12 @@ def add(
         urgency, cfg.urgency.values, label="urgency", header="Urgency", default="soon"
     )
 
-    if horizon is None:
-        picked = ui.choose(
-            ["(none)", *cfg.horizon.values], header="Horizon (Esc/(none) to skip)"
-        )
-        horizon = None if picked == "(none)" else picked
-    if horizon is not None:
-        _validate_choice(horizon, cfg.horizon.values, "horizon")
+    horizon = _resolve_optional_choice(
+        horizon,
+        cfg.horizon.values,
+        label="horizon",
+        header="Horizon (Esc/(none) to skip)",
+    )
 
     parsed_deadline: date | None = None
     if deadline:
@@ -253,15 +285,7 @@ def add(
 @handle_errors
 def done():
     """Mark todos as completed (fzf multi-selection)."""
-    data_dir = require_data_dir()
-    cfg = load_repo_config(data_dir)
-    todos = storage.list_active(data_dir)
-    if not todos:
-        console.print("[grey62]No active todo.[/grey62]")
-        return
-    selected = ui.select_todos(todos, multi=True)
-    if not selected:
-        raise typer.Exit(1)
+    data_dir, cfg, selected = _pick_active(multi=True)
     for t in selected:
         storage.move_to_done(t, data_dir)
     _ok(f"{len(selected)} todo(s) completed.")
@@ -272,18 +296,9 @@ def done():
 @handle_errors
 def delete():
     """Permanently delete todos (fzf multi + gum confirmation)."""
-    data_dir = require_data_dir()
-    cfg = load_repo_config(data_dir)
-    todos = storage.list_active(data_dir)
-    if not todos:
-        console.print("[grey62]No active todo.[/grey62]")
-        return
-    selected = ui.select_todos(todos, multi=True)
-    if not selected:
-        raise typer.Exit(1)
+    data_dir, cfg, selected = _pick_active(multi=True)
     if not ui.confirm(f"Permanently delete {len(selected)} todo(s)?"):
-        console.print("[grey62]cancelled[/grey62]")
-        raise typer.Exit(1)
+        raise ui.Cancelled()
     for t in selected:
         storage.delete_todo(t)
     _ok(f"{len(selected)} todo(s) deleted.")
@@ -294,19 +309,9 @@ def delete():
 @handle_errors
 def edit():
     """Edit a todo body in $EDITOR (fzf single selection)."""
-    data_dir = require_data_dir()
-    cfg = load_repo_config(data_dir)
-    todos = storage.list_active(data_dir)
-    if not todos:
-        console.print("[grey62]No active todo.[/grey62]")
-        return
-    selected = ui.select_todos(todos, multi=False)
-    if not selected:
-        raise typer.Exit(1)
+    data_dir, cfg, selected = _pick_active(multi=False)
     todo = selected[0]
-    if todo.path is None:
-        raise FileNotFoundError(f"todo not found: {todo.id}")
-    open_editor(todo.path)
+    open_editor(todo.require_path())
     _ok(f"Edited: {todo.title}")
     auto_sync(data_dir, cfg, f"edit: {todo.title}")
 
@@ -348,11 +353,7 @@ def show(
         todos = [t for t in todos if t.urgency == urgency]
     if today:
         d = date.today()
-        todos = [
-            t
-            for t in todos
-            if t.horizon == "today" or (t.deadline is not None and t.deadline <= d)
-        ]
+        todos = [t for t in todos if t.is_due(d)]
 
     render_todos(todos, cfg)
 

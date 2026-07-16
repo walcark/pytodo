@@ -215,16 +215,12 @@ README = (
 
 def _create_missing_layout(path: Path, missing: list[str]) -> list[str]:
     created: list[str] = []
-    if f"{TODOS_DIRNAME}/" in missing:
-        d = path / TODOS_DIRNAME
-        d.mkdir(parents=True, exist_ok=True)
-        (d / ".gitkeep").write_text("", encoding="utf-8")
-        created.append(f"{TODOS_DIRNAME}/")
-    if f"{DONE_DIRNAME}/" in missing:
-        d = path / DONE_DIRNAME
-        d.mkdir(parents=True, exist_ok=True)
-        (d / ".gitkeep").write_text("", encoding="utf-8")
-        created.append(f"{DONE_DIRNAME}/")
+    for name in (TODOS_DIRNAME, DONE_DIRNAME):
+        if f"{name}/" in missing:
+            d = path / name
+            d.mkdir(parents=True, exist_ok=True)
+            (d / ".gitkeep").write_text("", encoding="utf-8")
+            created.append(f"{name}/")
     if REPO_CONFIG_NAME in missing:
         (path / REPO_CONFIG_NAME).write_text(
             default_repo_config_toml(), encoding="utf-8"
@@ -429,7 +425,8 @@ def sync(
         A summary of what happened.
     """
     result = SyncResult()
-    origin = has_origin(data_dir) and network
+    # `network` first so a local-only sync skips the `git remote` subprocess.
+    origin = network and has_origin(data_dir)
     message = message or _default_message()
 
     # -- pull ---------------------------------------------------------------

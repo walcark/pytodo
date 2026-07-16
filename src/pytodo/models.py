@@ -111,6 +111,42 @@ class Todo:
             and self.completed is None
         )
 
+    def is_due(self, today: date | None = None) -> bool:
+        """Return whether the todo is due by ``today``.
+
+        Parameters
+        ----------
+        today : datetime.date, optional
+            Reference date, defaults to :func:`datetime.date.today`.
+
+        Returns
+        -------
+        bool
+            ``True`` for a ``today`` horizon, or a deadline reached (today or
+            overdue).
+        """
+        today = today or date.today()
+        return self.horizon == "today" or (
+            self.deadline is not None and self.deadline <= today
+        )
+
+    def require_path(self) -> Path:
+        """Return the on-disk path, raising if it is unset or missing.
+
+        Returns
+        -------
+        pathlib.Path
+            The existing file location.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the todo has no path or the file does not exist.
+        """
+        if self.path is None or not self.path.exists():
+            raise FileNotFoundError(f"todo not found: {self.id}")
+        return self.path
+
 
 def make_sort_key(urgency: list[str], horizon: list[str]) -> Callable[[Todo], tuple]:
     """Build an in-category sort key bound to the repo's value orderings.

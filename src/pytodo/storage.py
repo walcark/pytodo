@@ -130,14 +130,13 @@ def move_to_done(todo: Todo, data_dir: Path, *, now: datetime | None = None) -> 
         If the source file does not exist.
     """
     now = now or datetime.now()
-    if todo.path is None or not todo.path.exists():
-        raise FileNotFoundError(f"todo not found: {todo.id}")
+    src = todo.require_path()
     dest_dir = done_dir(data_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{todo.id}.md"
     todo.completed = now.replace(microsecond=0)
     dest.write_text(todo.to_markdown(), encoding="utf-8")
-    todo.path.unlink()
+    src.unlink()
     todo.path = dest
     return dest
 
@@ -155,6 +154,4 @@ def delete_todo(todo: Todo) -> None:
     FileNotFoundError
         If the file does not exist.
     """
-    if todo.path is None or not todo.path.exists():
-        raise FileNotFoundError(f"todo not found: {todo.id}")
-    todo.path.unlink()
+    todo.require_path().unlink()
