@@ -1,13 +1,37 @@
-"""Todo model and markdown front matter (de)serialization."""
+"""Todo model and markdown front matter (de)serialization.
+
+The model follows GTD (see ``docs/model.md``). The two axes that matter are
+kept strictly separate: ``area`` is a domain of responsibility ("which part of
+my life"), ``context`` is a precondition for acting ("what do I need in order
+to do this right now"). They are orthogonal, and only ``context`` answers the
+question you actually ask when choosing what to do next.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
+from enum import Enum
 from pathlib import Path
 
 import yaml
+
+
+class TodoState(Enum):
+    """Engagement level of a todo.
+
+    ``INBOX`` is captured but unclarified. ``NEXT`` is a physical action you
+    can start right now given its context. ``WAITING`` is blocked on someone
+    else, so it stays out of the list you pick from. ``SOMEDAY`` is not
+    committed to, and stays out for the same reason: a list where everything
+    is doable is the only kind you keep trusting.
+    """
+
+    INBOX = "inbox"
+    NEXT = "next"
+    WAITING = "waiting"
+    SOMEDAY = "someday"
+    DONE = "done"
 
 
 @dataclass
@@ -16,22 +40,29 @@ class Todo:
 
     The identifier (``id``) is the file name without extension. It is set once
     at creation time and never changes; moving the file to ``done/`` keeps the
-    same name.
+    same name, and a change of ``state`` never moves the file at all.
 
     Attributes
     ----------
     id : str
         Unique identifier, also the file stem (``YYYYMMDD-HHMMSS-<hex>``).
     title : str
-        One-line title, mandatory.
-    category : str
-        Category name, constrained by the repo config.
-    urgency : str
-        One of ``now``, ``soon`` or ``someday``.
-    horizon : str or None
-        Optional soft horizon (``today``, ``week`` or ``month``).
+        One-line title, mandatory. For a ``NEXT`` todo it should be a physical,
+        visible next step ("Call the plumber about the leak"), not a topic.
+    state : TodoState
+        Engagement level. Captured todos start at ``INBOX``.
+    context : str or None
+        What you need in order to act (``@computer``, ``@phone``...). ``None``
+        while unclarified; a ``NEXT`` todo without one is unselectable, which
+        ``todo review`` reports.
+    area : str or None
+        Domain of responsibility, constrained by the repo config.
+    project : str or None
+        Id of the project this action belongs to, or ``None`` when standalone.
+    waiting_on : str or None
+        Who or what is blocking, when ``state`` is ``WAITING``.
     created : datetime.datetime or None
-        Creation timestamp.
+        Creation timestamp. Also the sort key: lists run oldest first.
     completed : datetime.datetime or None
         Completion timestamp, filled when the file moves to ``done/``.
     body : str
@@ -42,9 +73,11 @@ class Todo:
 
     id: str
     title: str
-    category: str
-    urgency: str = "soon"
-    horizon: str | None = None
+    state: TodoState = TodoState.INBOX
+    context: str | None = None
+    area: str | None = None
+    project: str | None = None
+    waiting_on: str | None = None
     created: datetime | None = None
     completed: datetime | None = None
     body: str = ""
@@ -56,9 +89,11 @@ class Todo:
         """Return the front matter as an ordered mapping."""
         return {
             "title": self.title,
-            "category": self.category,
-            "urgency": self.urgency,
-            "horizon": self.horizon,
+            "state": self.state.value,
+            "context": self.context,
+            "area": self.area,
+            "project": self.project,
+            "waiting_on": self.waiting_on,
             "created": self.created,
             "completed": self.completed,
         }
@@ -102,40 +137,28 @@ class Todo:
         return self.path
 
 
-def make_sort_key(urgency: list[str], horizon: list[str]) -> Callable[[Todo], tuple]:
-    """Build an in-category sort key bound to the repo's value orderings.
+def sort_key(todo: Todo) -> tuple:
+    """Return the ordering key for a todo: oldest first, then title.
 
-    Both ``urgency`` and ``horizon`` are ordered lists coming from the repo
-    config: the rank of a value is its index (position 0 is the most urgent /
-    nearest). Todos are ordered by urgency first, then by horizon (nearest
-    first). Unknown values sort last.
+    Nothing ranks todos any more now that ``urgency`` and ``horizon`` are gone.
+    Age is the only honest signal left, and it has the right property: an old
+    item taps you on the shoulder. Any other order would smuggle a priority
+    field back in, which is what GTD says not to do (priority is decided at
+    engage time, and ``todo day`` is where that happens).
+
+    Todos without a ``created`` stamp sort last.
 
     Parameters
     ----------
-    urgency : list of str
-        Allowed urgency values, most urgent first.
-    horizon : list of str
-        Allowed horizon values, nearest first.
+    todo : Todo
+        The todo to key.
 
     Returns
     -------
-    callable
-        A function suitable for ``sorted(todos, key=...)``.
+    tuple
+        A key suitable for ``sorted(todos, key=sort_key)``.
     """
-
-    def rank(value: str | None, order: list[str]) -> int:
-        if value is None or value not in order:
-            return len(order)  # unknown / unset values sort last
-        return order.index(value)
-
-    def key(todo: Todo) -> tuple:
-        return (
-            rank(todo.urgency, urgency),
-            rank(todo.horizon, horizon),
-            todo.title.lower(),
-        )
-
-    return key
+    return (todo.created is None, todo.created or datetime.max, todo.title.lower())
 
 
 def _coerce_datetime(value) -> datetime | None:
@@ -146,6 +169,19 @@ def _coerce_datetime(value) -> datetime | None:
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day)
     return datetime.fromisoformat(str(value))
+
+
+def _coerce_state(value) -> TodoState:
+    """Return the parsed state, falling back to ``INBOX`` on an unknown value.
+
+    An unreadable state must not lose the todo: ``INBOX`` puts it back in front
+    of you at the next ``todo clarify`` rather than hiding it in a list you
+    never look at.
+    """
+    try:
+        return TodoState(str(value))
+    except ValueError:
+        return TodoState.INBOX
 
 
 def parse_markdown(text: str, *, todo_id: str, path: Path | None = None) -> Todo:
@@ -196,9 +232,11 @@ def parse_markdown(text: str, *, todo_id: str, path: Path | None = None) -> Todo
     return Todo(
         id=todo_id,
         title=str(title),
-        category=str(fm.get("category", "")),
-        urgency=str(fm.get("urgency", "soon")),
-        horizon=(fm.get("horizon") or None),
+        state=_coerce_state(fm.get("state", TodoState.INBOX.value)),
+        context=(fm.get("context") or None),
+        area=(fm.get("area") or None),
+        project=(fm.get("project") or None),
+        waiting_on=(fm.get("waiting_on") or None),
         created=_coerce_datetime(fm.get("created")),
         completed=_coerce_datetime(fm.get("completed")),
         body=body,

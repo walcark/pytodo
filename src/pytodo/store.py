@@ -1,4 +1,13 @@
-"""Filesystem operations on the todo tree (git-independent)."""
+"""Filesystem operations on the todo tree (git-independent).
+
+Owns the on-disk layout of the data repo, hence the directory names live here:
+:mod:`pytodo.vcs` scaffolds the layout that this module reads.
+
+One markdown file per todo, per project and per day. A todo's ``state`` is a
+front matter field, not a directory: only completion moves a file (to
+``done/``), so clarifying an item does not churn its path and every state
+change stays a one-line diff.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +15,14 @@ import secrets
 from datetime import date, datetime
 from pathlib import Path
 
-from .config import DONE_DIRNAME, PLANS_DIRNAME, TODOS_DIRNAME
 from .plan import DayPlan, parse_plan
-from .todo import Todo, load_todo
+from .project import Project, ProjectState, load_project
+from .todo import Todo, TodoState, load_todo
+
+TODOS_DIRNAME = "todos"
+DONE_DIRNAME = "done"
+PLANS_DIRNAME = "plans"
+PROJECTS_DIRNAME = "projects"
 
 
 def todos_dir(data_dir: Path) -> Path:
@@ -21,8 +35,8 @@ def done_dir(data_dir: Path) -> Path:
     return data_dir / DONE_DIRNAME
 
 
-def new_todo_id(now: datetime | None = None) -> str:
-    """Return a fresh todo id.
+def new_id(now: datetime | None = None) -> str:
+    """Return a fresh id for a todo or a project.
 
     Parameters
     ----------
@@ -46,7 +60,7 @@ def _list_dir(directory: Path) -> list[Todo]:
 
 
 def list_active(data_dir: Path) -> list[Todo]:
-    """Return the active todos (files under ``todos/``)."""
+    """Return every non-completed todo, whatever its state (files under ``todos/``)."""
     return _list_dir(todos_dir(data_dir))
 
 
@@ -55,16 +69,40 @@ def list_done(data_dir: Path) -> list[Todo]:
     return _list_dir(done_dir(data_dir))
 
 
+def list_by_state(data_dir: Path, state: TodoState) -> list[Todo]:
+    """Return the active todos in a given state.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    state : TodoState
+        State to filter on.
+
+    Returns
+    -------
+    list of Todo
+        Matching todos, in directory order (callers sort with
+        :func:`pytodo.todo.sort_key`).
+    """
+    return [todo for todo in list_active(data_dir) if todo.state is state]
+
+
 def create_todo(
     data_dir: Path,
     *,
     title: str,
-    category: str,
-    urgency: str = "soon",
-    horizon: str | None = None,
+    state: TodoState = TodoState.INBOX,
+    context: str | None = None,
+    area: str | None = None,
+    project: str | None = None,
     now: datetime | None = None,
 ) -> Todo:
-    """Create a new active todo file.
+    """Create a new todo file.
+
+    Defaults to ``INBOX`` with nothing else set: capture must cost one second
+    and zero decisions, or you stop capturing. Everything past the title is
+    filled in later by ``todo clarify``.
 
     Parameters
     ----------
@@ -72,12 +110,14 @@ def create_todo(
         Data repo root.
     title : str
         Todo title.
-    category : str
-        Category name.
-    urgency : str, optional
-        Urgency value, defaults to ``soon``.
-    horizon : str or None, optional
-        Optional horizon.
+    state : TodoState, optional
+        Engagement level, defaults to ``INBOX``.
+    context : str or None, optional
+        What you need in order to act.
+    area : str or None, optional
+        Domain of responsibility.
+    project : str or None, optional
+        Id of the parent project.
     now : datetime.datetime, optional
         Creation time, defaults to now.
 
@@ -87,16 +127,17 @@ def create_todo(
         The created todo, with ``path`` set to the new file.
     """
     now = now or datetime.now()
-    todo_id = new_todo_id(now)
+    todo_id = new_id(now)
     directory = todos_dir(data_dir)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{todo_id}.md"
     todo = Todo(
         id=todo_id,
         title=title.strip(),
-        category=category,
-        urgency=urgency,
-        horizon=horizon,
+        state=state,
+        context=context,
+        area=area,
+        project=project,
         created=now.replace(microsecond=0),
         path=path,
     )
@@ -104,8 +145,34 @@ def create_todo(
     return todo
 
 
+def save_todo(todo: Todo) -> Path:
+    """Write a todo back to its existing file.
+
+    Used by every state change (clarify, defer, delegate). The path never
+    moves, so this is always a rewrite in place.
+
+    Parameters
+    ----------
+    todo : Todo
+        Todo to persist; its ``path`` must exist.
+
+    Returns
+    -------
+    pathlib.Path
+        The path that was written.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    """
+    path = todo.require_path()
+    path.write_text(todo.to_markdown(), encoding="utf-8")
+    return path
+
+
 def move_to_done(todo: Todo, data_dir: Path, *, now: datetime | None = None) -> Path:
-    """Move a todo file to ``done/`` and stamp its completion time.
+    """Move a todo file to ``done/``, stamping its completion time and state.
 
     Parameters
     ----------
@@ -131,6 +198,7 @@ def move_to_done(todo: Todo, data_dir: Path, *, now: datetime | None = None) -> 
     dest_dir = done_dir(data_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{todo.id}.md"
+    todo.state = TodoState.DONE
     todo.completed = now.replace(microsecond=0)
     dest.write_text(todo.to_markdown(), encoding="utf-8")
     src.unlink()
@@ -152,6 +220,126 @@ def delete_todo(todo: Todo) -> None:
         If the file does not exist.
     """
     todo.require_path().unlink()
+
+
+# --------------------------------------------------------------------------- #
+# Projects                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+def projects_dir(data_dir: Path) -> Path:
+    """Return the ``projects/`` directory for a data repo."""
+    return data_dir / PROJECTS_DIRNAME
+
+
+def list_projects(data_dir: Path) -> list[Project]:
+    """Return every project, whatever its state."""
+    directory = projects_dir(data_dir)
+    if not directory.exists():
+        return []
+    return [load_project(path) for path in sorted(directory.glob("*.md"))]
+
+
+def list_active_projects(data_dir: Path) -> list[Project]:
+    """Return the projects you are currently committed to."""
+    return [p for p in list_projects(data_dir) if p.state is ProjectState.ACTIVE]
+
+
+def create_project(
+    data_dir: Path,
+    *,
+    title: str,
+    outcome: str | None = None,
+    area: str | None = None,
+    now: datetime | None = None,
+) -> Project:
+    """Create a new active project file.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    title : str
+        Project name.
+    outcome : str or None, optional
+        What "done" looks like.
+    area : str or None, optional
+        Domain of responsibility.
+    now : datetime.datetime, optional
+        Creation time, defaults to now.
+
+    Returns
+    -------
+    Project
+        The created project, with ``path`` set.
+    """
+    now = now or datetime.now()
+    project_id = new_id(now)
+    directory = projects_dir(data_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{project_id}.md"
+    project = Project(
+        id=project_id,
+        title=title.strip(),
+        outcome=outcome,
+        area=area,
+        created=now.replace(microsecond=0),
+        path=path,
+    )
+    path.write_text(project.to_markdown(), encoding="utf-8")
+    return project
+
+
+def save_project(project: Project) -> Path:
+    """Write a project back to its existing file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    """
+    path = project.require_path()
+    path.write_text(project.to_markdown(), encoding="utf-8")
+    return path
+
+
+def delete_project(project: Project) -> None:
+    """Permanently delete a project file.
+
+    Todos referencing it are left alone: the reference points one way only, so
+    they simply become standalone actions rather than dangling.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    """
+    project.require_path().unlink()
+
+
+def stalled_projects(data_dir: Path) -> list[Project]:
+    """Return the active projects with no ``next`` action.
+
+    This is GTD's central operational rule, and the one humans always break:
+    every active project must have at least one next action, or it is not
+    moving. Checking it is free, which is much of the point of building this.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+
+    Returns
+    -------
+    list of Project
+        Active projects that nothing is currently advancing.
+    """
+    advancing = {
+        todo.project
+        for todo in list_active(data_dir)
+        if todo.state is TodoState.NEXT and todo.project
+    }
+    return [p for p in list_active_projects(data_dir) if p.id not in advancing]
 
 
 # --------------------------------------------------------------------------- #

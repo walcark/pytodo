@@ -1,26 +1,31 @@
-"""`todo` CLI - Typer entry point."""
+"""`todo` CLI - Typer entry point.
+
+The command surface follows GTD's five steps (see ``docs/model.md``):
+
+- capture  : ``todo add "..."``   straight to the inbox, zero prompts
+- clarify  : ``todo clarify``     empties the inbox, one decision at a time
+- organize : the states, contexts and projects themselves
+- reflect  : ``todo review``
+- engage   : ``todo day`` / ``todo doing`` / ``todo next`` / ``todo show``
+"""
 
 from __future__ import annotations
 
 import functools
 import os
 import subprocess
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import typer
 from rich.markup import escape
 
 from . import prompt, store, vcs
-from .config import (
-    RepoConfig,
-    load_repo_config,
-    read_data_dir,
-    write_data_dir,
-)
 from .plan import PlanEntry, PlanStatus
-from .todo import Todo
+from .settings import read_data_dir, write_data_dir
+from .todo import Todo, TodoState, sort_key
 from .view import console, render_history, render_todos
+from .vocabulary import RepoConfig, load_repo_config, save_repo_config
 
 app = typer.Typer(
     help="Manage todos synchronized through git.",
@@ -258,7 +263,7 @@ def repo(
 
 
 # --------------------------------------------------------------------------- #
-# Mutations                                                                    #
+# Capture                                                                      #
 # --------------------------------------------------------------------------- #
 
 
@@ -266,12 +271,14 @@ def repo(
 @handle_errors
 def add(
     title: str | None = typer.Argument(None, help="Todo title."),
-    category: str | None = typer.Option(None, "-c", "--category"),
-    urgency: str | None = typer.Option(None, "-u", "--urgency"),
-    horizon: str | None = typer.Option(None, "--horizon"),
     edit: bool = typer.Option(False, "--edit", help="Open $EDITOR after creation."),
 ):
-    """Add a todo (interactive; any missing option triggers a prompt)."""
+    """Capture a todo into the inbox.
+
+    Deliberately asks nothing beyond the title: capture must cost a second and
+    zero decisions, or you stop capturing. `todo clarify` does the thinking
+    later.
+    """
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
 
@@ -281,32 +288,128 @@ def add(
             _err("Empty title, aborting.")
             raise typer.Exit(1)
 
-    category = _resolve_choice(
-        category, cfg.categories, label="category", header="Category"
-    )
-    urgency = _resolve_choice(
-        urgency, cfg.urgency.values, label="urgency", header="Urgency", default="soon"
-    )
-
-    horizon = _resolve_optional_choice(
-        horizon,
-        cfg.horizon.values,
-        label="horizon",
-        header="Horizon (Esc/(none) to skip)",
-    )
-
-    todo = store.create_todo(
-        data_dir,
-        title=title,
-        category=category,
-        urgency=urgency,
-        horizon=horizon,
-    )
+    todo = store.create_todo(data_dir, title=title)
     if edit and todo.path is not None:
         open_editor(todo.path)
 
-    _ok(f"Added: [{todo.category}/{todo.urgency}] {todo.title}")
+    inbox = len(store.list_by_state(data_dir, TodoState.INBOX))
+    _ok(f"Captured: {todo.title}  [inbox: {inbox}]")
     auto_sync(data_dir, cfg, f"add: {todo.title}")
+
+
+# --------------------------------------------------------------------------- #
+# Clarify                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+def _clarify_actionable(data_dir: Path, cfg: RepoConfig, todo: Todo) -> str:
+    """Clarify one actionable item. Return a short log line."""
+    kind = prompt.choose(
+        ["single action", "multi-step (project)"],
+        header=f"{todo.title}  |  is it multi-step?",
+    )
+
+    project_id = None
+    if kind == "multi-step (project)":
+        outcome = prompt.text_input("What does 'done' look like?", default=todo.title)
+        area = _resolve_optional_choice(
+            None, cfg.areas, label="area", header="Area (Esc/(none) to skip)"
+        )
+        project = store.create_project(
+            data_dir, title=todo.title, outcome=outcome or None, area=area
+        )
+        project_id = project.id
+        todo.title = prompt.text_input(
+            "First next action?", default=f"Plan: {todo.title}"
+        )
+        todo.area = area
+
+    disposition = prompt.choose(
+        ["next action", "under 2 min (do it now)", "waiting on someone"],
+        header=f"{todo.title}  |  what happens to it?",
+    )
+
+    todo.project = project_id
+    if todo.area is None:
+        todo.area = _resolve_optional_choice(
+            None, cfg.areas, label="area", header="Area (Esc/(none) to skip)"
+        )
+
+    if disposition == "under 2 min (do it now)":
+        store.save_todo(todo)
+        store.move_to_done(todo, data_dir)
+        return f"done (2-min rule): {todo.title}"
+
+    if disposition == "waiting on someone":
+        todo.state = TodoState.WAITING
+        todo.waiting_on = prompt.text_input("Waiting on whom?") or None
+        store.save_todo(todo)
+        return f"waiting on {todo.waiting_on or '?'}: {todo.title}"
+
+    todo.state = TodoState.NEXT
+    todo.context = _resolve_choice(
+        None, cfg.contexts, label="context", header="Context (what do you need?)"
+    )
+    store.save_todo(todo)
+    return f"next {todo.context}: {todo.title}"
+
+
+def _clarify_one(data_dir: Path, cfg: RepoConfig, todo: Todo) -> str:
+    """Walk GTD's clarify tree for a single inbox item. Return a log line."""
+    actionable = prompt.choose(
+        ["yes", "no"], header=f"{todo.title}  |  is it actionable?"
+    )
+    if actionable == "no":
+        disposition = prompt.choose(
+            ["someday/maybe", "trash"], header=f"{todo.title}  |  then what?"
+        )
+        if disposition == "trash":
+            store.delete_todo(todo)
+            return f"trashed: {todo.title}"
+        todo.state = TodoState.SOMEDAY
+        store.save_todo(todo)
+        return f"someday: {todo.title}"
+
+    return _clarify_actionable(data_dir, cfg, todo)
+
+
+@app.command()
+@handle_errors
+def clarify():
+    """Empty the inbox, one decision at a time (GTD's clarify step).
+
+    Walks each captured item through the decision tree: actionable or not,
+    multi-step or not, then the two-minute rule, delegation, or a next action
+    with a context.
+    """
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    inbox = sorted(store.list_by_state(data_dir, TodoState.INBOX), key=sort_key)
+    if not inbox:
+        _ok("Inbox zero.")
+        return
+
+    done_lines: list[str] = []
+    for i, todo in enumerate(inbox, 1):
+        console.print(f"\n[bold cyan]({i}/{len(inbox)})[/bold cyan] {todo.title}")
+        try:
+            done_lines.append(_clarify_one(data_dir, cfg, todo))
+        except prompt.Cancelled:
+            console.print("[grey62]stopped; the rest stays in the inbox[/grey62]")
+            break
+
+    if not done_lines:
+        return
+    console.print()
+    for line in done_lines:
+        console.print(f"  [grey62]-[/grey62] {line}")
+    _ok(f"{len(done_lines)} item(s) clarified.")
+    auto_sync(data_dir, cfg, f"clarify: {len(done_lines)} item(s)")
+
+
+# --------------------------------------------------------------------------- #
+# Mutations                                                                    #
+# --------------------------------------------------------------------------- #
 
 
 @app.command()
@@ -346,7 +449,7 @@ def edit():
 
 
 # --------------------------------------------------------------------------- #
-# Daily plans                                                                  #
+# Daily plans (engage)                                                         #
 # --------------------------------------------------------------------------- #
 
 
@@ -357,7 +460,7 @@ def day():
 
     On the first run of a new day, offers to carry the previous day's
     unfinished (planned/doing) items forward. Then lets you pick, via fzf,
-    among the active todos not already planned today.
+    among the `next` actions not already planned today.
     """
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
@@ -376,20 +479,22 @@ def day():
                 for e in previous.entries
                 if e.status is not PlanStatus.DONE and e.todo_id in active_ids
             ]
-            prompt = (
+            question = (
                 f"Carry {len(carry)} unfinished item(s) "
                 f"from {previous.day.isoformat()}?"
             )
-            if carry and prompt.confirm(prompt):
+            if carry and prompt.confirm(question):
                 for e in carry:
                     plan.entries.append(PlanEntry(todo_id=e.todo_id, title=e.title))
 
-    candidates = [t for t in active if not plan.has(t.id)]
+    # Only `next` actions are pickable: a day plan you cannot act on is how a
+    # list stops being trusted.
+    candidates = [t for t in active if t.state is TodoState.NEXT and not plan.has(t.id)]
     if candidates:
-        for t in prompt.select_todos(candidates, multi=True):
+        for t in prompt.select_todos(sorted(candidates, key=sort_key), multi=True):
             plan.entries.append(PlanEntry(todo_id=t.id, title=t.title))
     elif not plan.entries:
-        console.print("[grey62]No active todo to plan.[/grey62]")
+        console.print("[grey62]No next action to plan. Run `todo clarify`.[/grey62]")
         return
 
     store.save_day_plan(data_dir, plan)
@@ -437,39 +542,201 @@ def history(
 
 
 # --------------------------------------------------------------------------- #
-# Read                                                                         #
+# Read (engage)                                                                #
 # --------------------------------------------------------------------------- #
+
+
+@app.command("next")
+@handle_errors
+def next_(
+    context: str | None = typer.Option(
+        None, "-c", "--context", help="Only this context (e.g. @computer)."
+    ),
+):
+    """List next actions, optionally filtered by context.
+
+    This is the engage question: "I am here, with this to hand, what can I do?"
+    """
+    data_dir = require_data_dir()
+    todos = store.list_by_state(data_dir, TodoState.NEXT)
+    if context:
+        todos = [t for t in todos if t.context == context]
+    render_todos(todos, title=f"Next actions{f' - {context}' if context else ''}")
 
 
 @app.command()
 @handle_errors
 def show(
-    category: str | None = typer.Argument(
-        None, help="Only show this category (default: all)."
-    ),
-    urgency: str | None = typer.Option(None, "-u", "--urgency"),
+    area: str | None = typer.Argument(None, help="Only show this area (default: all)."),
+    state: str | None = typer.Option(None, "-s", "--state", help="Filter by state."),
     done_: bool = typer.Option(False, "--done", help="Show the archive."),
 ):
-    """Show todos (rich), grouped by category and sorted.
+    """Show todos (rich), grouped by area and oldest first.
 
-    `todo show` shows everything; `todo show <category>` filters one category.
+    `todo show` shows everything; `todo show <area>` filters one area.
     """
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
 
     if done_:
-        render_todos(store.list_done(data_dir), cfg, title="Archive")
+        render_todos(store.list_done(data_dir), title="Archive")
         return
 
     todos = store.list_active(data_dir)
-    if category:
-        if category not in cfg.categories:
-            _warn(f"unknown category: {category!r}. Known: {', '.join(cfg.categories)}")
-        todos = [t for t in todos if t.category == category]
-    if urgency:
-        todos = [t for t in todos if t.urgency == urgency]
+    if area:
+        if area not in cfg.areas:
+            _warn(f"unknown area: {area!r}. Known: {', '.join(cfg.areas)}")
+        todos = [t for t in todos if t.area == area]
+    if state:
+        wanted = _validate_choice(state, [s.value for s in TodoState], label="state")
+        todos = [t for t in todos if t.state.value == wanted]
 
-    render_todos(todos, cfg)
+    render_todos(todos)
+
+
+# --------------------------------------------------------------------------- #
+# Reflect                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+@handle_errors
+def review():
+    """Report what GTD says is broken: the weekly review, checked by the tool.
+
+    Four things rot silently, so the tool watches them: a filling inbox, a
+    project nothing is advancing, a next action you cannot select because it
+    has no context, and someone you forgot you were waiting on.
+    """
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    active = store.list_active(data_dir)
+    problems = 0
+
+    inbox = sorted([t for t in active if t.state is TodoState.INBOX], key=sort_key)
+    if inbox:
+        problems += 1
+        oldest = inbox[0]
+        age = ""
+        if oldest.created is not None:
+            days = (datetime.now() - oldest.created).days
+            age = f", oldest sat {days} day(s)"
+        _warn(f"Inbox: {len(inbox)} item(s) to clarify{age}")
+
+    stalled = store.stalled_projects(data_dir)
+    if stalled:
+        problems += 1
+        _warn(f"{len(stalled)} stalled project(s) - no next action:")
+        for p in stalled:
+            console.print(f"  [grey62]-[/grey62] {p.title}")
+
+    contextless = [t for t in active if t.state is TodoState.NEXT and not t.context]
+    if contextless:
+        problems += 1
+        _warn(f"{len(contextless)} next action(s) with no context (unselectable):")
+        for t in sorted(contextless, key=sort_key):
+            console.print(f"  [grey62]-[/grey62] {t.title}")
+
+    cutoff = datetime.now() - timedelta(days=cfg.waiting_stale_days)
+    stale = [
+        t
+        for t in active
+        if t.state is TodoState.WAITING and t.created is not None and t.created < cutoff
+    ]
+    if stale:
+        problems += 1
+        _warn(f"{len(stale)} item(s) waiting over {cfg.waiting_stale_days} day(s):")
+        for t in sorted(stale, key=sort_key):
+            console.print(f"  [grey62]-[/grey62] {t.title} ({t.waiting_on or '?'})")
+
+    if not problems:
+        _ok("Nothing to fix: inbox zero, every project moving.")
+
+
+# --------------------------------------------------------------------------- #
+# Vocabulary                                                                   #
+# --------------------------------------------------------------------------- #
+
+config_app = typer.Typer(help="Read and edit the shared vocabulary.")
+app.add_typer(config_app, name="config")
+
+
+def _edit_vocabulary(kind: str, action: str, value: str) -> None:
+    """Add or remove one value from ``areas``/``contexts`` and sync.
+
+    Editing the vocabulary is a mutation like any other: the file is versioned
+    and shared across devices, so it commits and syncs rather than being
+    treated as a local preference.
+    """
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    values: list[str] = getattr(cfg, kind)
+
+    if action == "add":
+        if value in values:
+            _warn(f"{value!r} is already a known {kind[:-1]}.")
+            return
+        values.append(value)
+    else:
+        if value not in values:
+            _err(f"unknown {kind[:-1]}: {value!r}. Known: {', '.join(values)}")
+            raise typer.Exit(1)
+        # Removing a value still in use would silently orphan those todos.
+        field = "context" if kind == "contexts" else "area"
+        users = [t for t in store.list_active(data_dir) if getattr(t, field) == value]
+        if users:
+            _err(f"{len(users)} todo(s) still use {value!r}:")
+            for t in users[:5]:
+                console.print(f"  [grey62]-[/grey62] {t.title}")
+            _err("Reassign them first, or edit config.toml by hand.")
+            raise typer.Exit(1)
+        values.remove(value)
+
+    save_repo_config(data_dir, cfg)
+    _ok(f"{kind[:-1]} {action}: {value}")
+    auto_sync(data_dir, cfg, f"config: {action} {kind[:-1]} {value}")
+
+
+@config_app.callback(invoke_without_command=True)
+def config_show(ctx: typer.Context) -> None:
+    """Print the shared vocabulary."""
+    if ctx.invoked_subcommand is not None:
+        return
+    cfg = load_repo_config(require_data_dir())
+    console.print(f"[bold]areas[/bold]     {', '.join(cfg.areas)}")
+    console.print(f"[bold]contexts[/bold]  {', '.join(cfg.contexts)}")
+    console.print(f"[bold]waiting[/bold]   stale after {cfg.waiting_stale_days} day(s)")
+
+
+@config_app.command("edit")
+@handle_errors
+def config_edit():
+    """Open the shared config.toml in $EDITOR."""
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    open_editor(data_dir / "config.toml")
+    auto_sync(data_dir, cfg, "config: edit")
+
+
+@config_app.command("context")
+@handle_errors
+def config_context(
+    action: str = typer.Argument(..., help="add | rm"),
+    value: str = typer.Argument(..., help="e.g. @gym"),
+):
+    """Add or remove a context."""
+    verb = _validate_choice(action, ["add", "rm"], "action")
+    _edit_vocabulary("contexts", verb, value)
+
+
+@config_app.command("area")
+@handle_errors
+def config_area(
+    action: str = typer.Argument(..., help="add | rm"),
+    value: str = typer.Argument(..., help="e.g. health"),
+):
+    """Add or remove an area."""
+    _edit_vocabulary("areas", _validate_choice(action, ["add", "rm"], "action"), value)
 
 
 # --------------------------------------------------------------------------- #

@@ -1,8 +1,8 @@
 from datetime import date
 
 from pytodo import store
-from pytodo.config import PLANS_DIRNAME
 from pytodo.plan import DayPlan, PlanEntry, PlanStatus, parse_plan
+from pytodo.store import PLANS_DIRNAME
 
 
 def _plan() -> DayPlan:

@@ -1,5 +1,6 @@
 from pytodo import store, vcs
-from pytodo.config import DONE_DIRNAME, REPO_CONFIG_NAME, TODOS_DIRNAME
+from pytodo.store import DONE_DIRNAME, TODOS_DIRNAME
+from pytodo.vocabulary import REPO_CONFIG_NAME
 
 
 def test_setup_new_repo_scaffolds(tmp_path):
@@ -43,7 +44,7 @@ def test_setup_confirm_declined_on_unrelated_content(tmp_path):
 def test_sync_commits_without_origin(tmp_path):
     target = tmp_path / "data"
     vcs.setup_repo(str(target))
-    store.create_todo(target, title="Task", category="work")
+    store.create_todo(target, title="Task")
     result = vcs.sync(target)
     assert result.committed is True
     assert result.pushed is False
@@ -57,7 +58,7 @@ def test_sync_pushes_to_origin(tmp_path):
     vcs.setup_repo(str(target))
     vcs.run_git(["remote", "add", "origin", str(origin)], cwd=target)
 
-    store.create_todo(target, title="Task", category="work")
+    store.create_todo(target, title="Task")
     result = vcs.sync(target)
     assert result.committed is True
     assert result.pushed is True
@@ -78,7 +79,7 @@ def test_background_flush_drains_all_commits(tmp_path):
 
     # Several unpushed local commits (as after quick successive `add`s).
     for i in range(3):
-        store.create_todo(target, title=f"Task {i}", category="work")
+        store.create_todo(target, title=f"Task {i}")
         vcs.sync(target, network=False)  # local commit only
 
     assert vcs._unpushed_count(target) == 0  # no upstream yet -> 0

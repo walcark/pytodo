@@ -41,10 +41,14 @@ def test_ensure_fzf_raises_when_absent(monkeypatch):
         prompt.ensure_fzf()
 
 
-def test_format_line_shows_horizon():
+def test_format_line_leads_with_state_and_context():
+    from pytodo.todo import Todo, TodoState
+
+    t = Todo(id="1", title="Pay", state=TodoState.NEXT, context="@phone", area="admin")
+    assert prompt.format_line(t) == "[next] [@phone] Pay (admin)"
+
+
+def test_format_line_omits_unset_fields():
     from pytodo.todo import Todo
 
-    t = Todo(id="1", title="Pay", category="admin", urgency="now", horizon="week")
-    line = prompt.format_line(t)
-    assert line.startswith("[admin] [now] Pay")
-    assert "(week)" in line
+    assert prompt.format_line(Todo(id="1", title="Bare")) == "[inbox] Bare"

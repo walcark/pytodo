@@ -144,9 +144,15 @@ def select_todos(todos: list[Todo], *, multi: bool, preview: bool = True) -> lis
 
 
 def format_line(t: Todo) -> str:
-    """Return the fzf line ``[category] [urgency] title (horizon)``."""
-    suffix = f" ({t.horizon})" if t.horizon else ""
-    return f"[{t.category}] [{t.urgency}] {t.title}{suffix}"
+    """Return the fzf line ``[state] [context] title (area)``.
+
+    Context comes before the title because it is the axis you scan on: the
+    question being answered is "what can I act on right now". Area trails in
+    parentheses, since it only ever groups.
+    """
+    context = f" [{t.context}]" if t.context else ""
+    area = f" ({t.area})" if t.area else ""
+    return f"[{t.state.value}]{context} {t.title}{area}"
 
 
 # --------------------------------------------------------------------------- #
