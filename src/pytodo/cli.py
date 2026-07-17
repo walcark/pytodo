@@ -11,7 +11,7 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
-from . import gitrepo, prompt, store
+from . import prompt, store, vcs
 from .config import (
     RepoConfig,
     load_repo_config,
@@ -69,7 +69,7 @@ def handle_errors(fn):
         except prompt.MissingTool as exc:
             _err(str(exc))
             raise typer.Exit(2) from None
-        except gitrepo.RepoError as exc:
+        except vcs.RepoError as exc:
             _err(str(exc))
             raise typer.Exit(1) from None
         except FileNotFoundError as exc:
@@ -94,7 +94,7 @@ def require_data_dir() -> Path:
     return data_dir
 
 
-def _emit_sync(result: gitrepo.SyncResult) -> None:
+def _emit_sync(result: vcs.SyncResult) -> None:
     for w in result.warnings:
         _warn(w)
     if result.conflict_files:
@@ -117,10 +117,10 @@ def auto_sync(data_dir: Path, cfg: RepoConfig, message: str) -> None:
     message : str
         Commit message for the local commit.
     """
-    result = gitrepo.sync(data_dir, message=message, network=False)
+    result = vcs.sync(data_dir, message=message, network=False)
     _emit_sync(result)
     if cfg.sync_auto:
-        gitrepo.spawn_background_flush(data_dir)
+        vcs.spawn_background_flush(data_dir)
 
 
 def open_editor(path: Path) -> None:
@@ -161,9 +161,9 @@ def _resolve_optional_choice(
     return _validate_choice(value, options, label)
 
 
-def _apply_setup(target: str) -> gitrepo.SetupResult:
+def _apply_setup(target: str) -> vcs.SetupResult:
     """Set up/adopt the repo at ``target``, persist it, and log the actions."""
-    result = gitrepo.setup_repo(target, confirm=prompt.confirm)
+    result = vcs.setup_repo(target, confirm=prompt.confirm)
     write_data_dir(result.data_dir)
     for action in result.actions:
         console.print(f"  [grey62]-[/grey62] {action}")
@@ -484,8 +484,8 @@ def sync():
     data_dir = require_data_dir()
     # Blocking lock: wait for any background sync to finish to avoid git
     # collisions, then run a full, guaranteed sync.
-    with gitrepo.sync_lock(data_dir, blocking=True):
-        result = gitrepo.sync(data_dir, push_if_unchanged=True)
+    with vcs.sync_lock(data_dir, blocking=True):
+        result = vcs.sync(data_dir, push_if_unchanged=True)
     _emit_sync(result)
     if result.conflict_files:
         raise typer.Exit(1)
@@ -499,7 +499,7 @@ def sync():
 def flush(data_dir: str):
     """Internal: detached background sync (spawned via `python -m pytodo _flush`)."""
     try:
-        gitrepo.background_flush(Path(data_dir))
+        vcs.background_flush(Path(data_dir))
     except Exception:
         pass  # detached process: never crash loudly
 

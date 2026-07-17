@@ -310,7 +310,7 @@ Every rename below has a reason; the current names are not merely unfashionable.
 
 | Current | Becomes | Why |
 | --- | --- | --- |
-| `gitrepo.py` | `vcs/` (`git.py`, `layout.py`, `sync.py`) | "repo" collides three ways: the git repository, the user's *data repo*, and the Repository pattern that `storage.py` implements. The worst name in the project, and 605 lines wants splitting anyway. |
+| `gitrepo.py` | `vcs.py` | "repo" collides three ways: the git repository, the user's *data repo*, and the Repository pattern that `storage.py` implements. The worst name in the project. |
 | `models.py` | `todo.py` | "models" is a Django-ism meaning "ORM tables". This is one dataclass plus parsing, and `plan.py` is equally a model yet sits outside it: the name is inconsistent with its own neighbour. |
 | `storage.py` | `store.py` | Same meaning, but the `store/` (files) vs `vcs/` (history and sync) pair finally makes the boundary readable from the names alone. |
 | `config.py` | `vocabulary.py` + `settings.py` | It holds two unrelated things. "Where is my data" is a machine-local setting; "which values are legal" (areas, contexts) is *domain*, not config. Splitting makes the layering honest. |
@@ -320,6 +320,15 @@ Every rename below has a reason; the current names are not merely unfashionable.
 | `models.make_sort_key` | (deleted) | No caller once ordering is by creation date. |
 | `config.Scale` | (deleted) | Existed only for `urgency` and `horizon`. |
 
+`vcs` stays a **single module**, not a `vcs/` package split into `git.py` /
+`layout.py` / `sync.py` as an earlier draft of this plan proposed. Its public
+API is a flat set of verbs (`sync`, `setup_repo`, `run_git`), which reads well
+as `vcs.sync(...)` and badly as `sync.sync(...)`. Worse, a `vcs/sync.py`
+submodule would make `vcs.sync` mean both a module and a function, which is the
+same class of collision this rename exists to remove. 605 lines with clear
+section dividers is navigable; split it when there is a reason beyond the line
+count.
+
 ### Target packages
 
 Three distributions in one monorepo, sharing the `pytodo` namespace (PEP 420:
@@ -327,7 +336,7 @@ Three distributions in one monorepo, sharing the `pytodo` namespace (PEP 420:
 
 ```
 pytodo-core     pytodo/core/    todo, project, plan, vocabulary, settings,
-                                store/, vcs/, service
+                                store, vcs, service
                                 deps: pyyaml
 pytodo-cli      pytodo/cli/     main, prompt, view, commands/
                                 deps: pytodo-core, typer, rich
