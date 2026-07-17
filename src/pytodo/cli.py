@@ -20,6 +20,7 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
+from . import migrate as migrate_mod
 from . import prompt, store, vcs
 from .plan import PlanEntry, PlanStatus
 from .settings import read_data_dir, write_data_dir
@@ -265,6 +266,37 @@ def repo(
         return
     result = _apply_setup(path)
     _ok(f"Active data repo: {result.data_dir}")
+
+
+@app.command()
+@handle_errors
+def migrate():
+    """Migrate a data repo from the pre-GTD format (category/urgency/horizon).
+
+    Rewrites every todo, archived todo and the config to the current shape.
+    Idempotent, and the repo is under git, so it is recoverable; but it is a
+    bulk rewrite, so it asks first.
+    """
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    pending = migrate_mod.count_pending(data_dir)
+    if not pending:
+        _ok("Already migrated: nothing to do.")
+        return
+    if not prompt.confirm(f"Rewrite {pending} file(s) to the new format?"):
+        raise prompt.Cancelled()
+
+    result = migrate_mod.migrate_repo(data_dir)
+    for w in result.warnings:
+        _warn(w)
+    if result.config_migrated:
+        console.print("  [grey62]-[/grey62] config.toml: categories -> areas")
+    _ok(
+        f"Migrated {len(result.migrated)} todo(s), skipped {result.skipped}. "
+        "Run `todo review` to assign contexts."
+    )
+    if result.changed:
+        auto_sync(data_dir, cfg, "migrate to the GTD model")
 
 
 # --------------------------------------------------------------------------- #
