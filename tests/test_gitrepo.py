@@ -1,4 +1,4 @@
-from pytodo import gitrepo, storage
+from pytodo import gitrepo, store
 from pytodo.config import DONE_DIRNAME, REPO_CONFIG_NAME, TODOS_DIRNAME
 
 
@@ -43,7 +43,7 @@ def test_setup_confirm_declined_on_unrelated_content(tmp_path):
 def test_sync_commits_without_origin(tmp_path):
     target = tmp_path / "data"
     gitrepo.setup_repo(str(target))
-    storage.create_todo(target, title="Task", category="work")
+    store.create_todo(target, title="Task", category="work")
     result = gitrepo.sync(target)
     assert result.committed is True
     assert result.pushed is False
@@ -57,7 +57,7 @@ def test_sync_pushes_to_origin(tmp_path):
     gitrepo.setup_repo(str(target))
     gitrepo.run_git(["remote", "add", "origin", str(origin)], cwd=target)
 
-    storage.create_todo(target, title="Task", category="work")
+    store.create_todo(target, title="Task", category="work")
     result = gitrepo.sync(target)
     assert result.committed is True
     assert result.pushed is True
@@ -78,7 +78,7 @@ def test_background_flush_drains_all_commits(tmp_path):
 
     # Several unpushed local commits (as after quick successive `add`s).
     for i in range(3):
-        storage.create_todo(target, title=f"Task {i}", category="work")
+        store.create_todo(target, title=f"Task {i}", category="work")
         gitrepo.sync(target, network=False)  # local commit only
 
     assert gitrepo._unpushed_count(target) == 0  # no upstream yet -> 0

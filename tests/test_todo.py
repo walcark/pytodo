@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from pytodo.models import Todo, make_sort_key, parse_markdown
+from pytodo.todo import Todo, make_sort_key, parse_markdown
 
 URGENCY = ["now", "soon", "someday"]
 HORIZON = ["today", "week", "month"]

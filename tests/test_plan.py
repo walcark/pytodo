@@ -1,6 +1,6 @@
 from datetime import date
 
-from pytodo import storage
+from pytodo import store
 from pytodo.config import PLANS_DIRNAME
 from pytodo.plan import DayPlan, PlanEntry, PlanStatus, parse_plan
 
@@ -48,24 +48,24 @@ def test_find_and_has():
 
 
 def test_load_missing_plan_is_empty(tmp_path):
-    plan = storage.load_day_plan(tmp_path, date(2026, 7, 15))
+    plan = store.load_day_plan(tmp_path, date(2026, 7, 15))
     assert plan.entries == []
-    assert not storage.plan_exists(tmp_path, date(2026, 7, 15))
+    assert not store.plan_exists(tmp_path, date(2026, 7, 15))
 
 
 def test_save_and_load(tmp_path):
-    storage.save_day_plan(tmp_path, _plan())
-    assert storage.plan_exists(tmp_path, date(2026, 7, 15))
+    store.save_day_plan(tmp_path, _plan())
+    assert store.plan_exists(tmp_path, date(2026, 7, 15))
     assert (tmp_path / PLANS_DIRNAME / "2026-07-15.md").exists()
-    loaded = storage.load_day_plan(tmp_path, date(2026, 7, 15))
+    loaded = store.load_day_plan(tmp_path, date(2026, 7, 15))
     assert len(loaded.entries) == 3
     assert loaded.entries[1].status is PlanStatus.DOING
 
 
 def test_list_plan_days_sorted(tmp_path):
     for d in (date(2026, 7, 15), date(2026, 7, 10), date(2026, 7, 12)):
-        storage.save_day_plan(tmp_path, DayPlan(day=d, entries=[PlanEntry("x", "t")]))
-    assert storage.list_plan_days(tmp_path) == [
+        store.save_day_plan(tmp_path, DayPlan(day=d, entries=[PlanEntry("x", "t")]))
+    assert store.list_plan_days(tmp_path) == [
         date(2026, 7, 10),
         date(2026, 7, 12),
         date(2026, 7, 15),
@@ -73,18 +73,18 @@ def test_list_plan_days_sorted(tmp_path):
 
 
 def test_latest_plan_before_skips_empty_and_future(tmp_path):
-    storage.save_day_plan(
+    store.save_day_plan(
         tmp_path, DayPlan(day=date(2026, 7, 10), entries=[PlanEntry("a", "A")])
     )
-    storage.save_day_plan(tmp_path, DayPlan(day=date(2026, 7, 12), entries=[]))  # empty
-    storage.save_day_plan(
+    store.save_day_plan(tmp_path, DayPlan(day=date(2026, 7, 12), entries=[]))  # empty
+    store.save_day_plan(
         tmp_path, DayPlan(day=date(2026, 7, 20), entries=[PlanEntry("z", "Z")])
     )
 
-    latest = storage.latest_plan_before(tmp_path, date(2026, 7, 15))
+    latest = store.latest_plan_before(tmp_path, date(2026, 7, 15))
     assert latest is not None
     assert latest.day == date(2026, 7, 10)  # 12 is empty, 20 is in the future
 
 
 def test_latest_plan_before_none_when_no_history(tmp_path):
-    assert storage.latest_plan_before(tmp_path, date(2026, 7, 15)) is None
+    assert store.latest_plan_before(tmp_path, date(2026, 7, 15)) is None

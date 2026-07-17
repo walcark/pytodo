@@ -11,16 +11,16 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
-from . import gitrepo, storage, ui
+from . import gitrepo, prompt, store
 from .config import (
     RepoConfig,
     load_repo_config,
     read_data_dir,
     write_data_dir,
 )
-from .models import Todo
 from .plan import PlanEntry, PlanStatus
-from .render import console, render_history, render_todos
+from .todo import Todo
+from .view import console, render_history, render_todos
 
 app = typer.Typer(
     help="Manage todos synchronized through git.",
@@ -63,10 +63,10 @@ def handle_errors(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except ui.Cancelled:
+        except prompt.Cancelled:
             console.print("[grey62]cancelled[/grey62]")
             raise typer.Exit(1) from None
-        except ui.MissingTool as exc:
+        except prompt.MissingTool as exc:
             _err(str(exc))
             raise typer.Exit(2) from None
         except gitrepo.RepoError as exc:
@@ -146,7 +146,7 @@ def _resolve_choice(
 ) -> str:
     """Return a valid choice, prompting via fzf when ``value`` is None."""
     if value is None:
-        value = ui.choose(options, header=header, default=default)
+        value = prompt.choose(options, header=header, default=default)
     return _validate_choice(value, options, label)
 
 
@@ -155,7 +155,7 @@ def _resolve_optional_choice(
 ) -> str | None:
     """Like :func:`_resolve_choice`, but the prompt offers a ``(none)`` opt-out."""
     if value is None:
-        value = ui.choose(["(none)", *options], header=header)
+        value = prompt.choose(["(none)", *options], header=header)
         if value == "(none)":
             return None
     return _validate_choice(value, options, label)
@@ -163,7 +163,7 @@ def _resolve_optional_choice(
 
 def _apply_setup(target: str) -> gitrepo.SetupResult:
     """Set up/adopt the repo at ``target``, persist it, and log the actions."""
-    result = gitrepo.setup_repo(target, confirm=ui.confirm)
+    result = gitrepo.setup_repo(target, confirm=prompt.confirm)
     write_data_dir(result.data_dir)
     for action in result.actions:
         console.print(f"  [grey62]-[/grey62] {action}")
@@ -178,11 +178,11 @@ def _pick_active(*, multi: bool) -> tuple[Path, RepoConfig, list[Todo]]:
     """
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
-    todos = storage.list_active(data_dir)
+    todos = store.list_active(data_dir)
     if not todos:
         console.print("[grey62]No active todo.[/grey62]")
         raise typer.Exit(0)
-    selected = ui.select_todos(todos, multi=multi)
+    selected = prompt.select_todos(todos, multi=multi)
     if not selected:
         raise typer.Exit(1)
     return data_dir, cfg, selected
@@ -196,9 +196,9 @@ def _reflect_done_in_today(data_dir: Path, todo_ids: list[str]) -> None:
     plan for today exists).
     """
     today = date.today()
-    if not storage.plan_exists(data_dir, today):
+    if not store.plan_exists(data_dir, today):
         return
-    plan = storage.load_day_plan(data_dir, today)
+    plan = store.load_day_plan(data_dir, today)
     changed = False
     for todo_id in todo_ids:
         entry = plan.find(todo_id)
@@ -206,12 +206,12 @@ def _reflect_done_in_today(data_dir: Path, todo_ids: list[str]) -> None:
             entry.status = PlanStatus.DONE
             changed = True
     if changed:
-        storage.save_day_plan(data_dir, plan)
+        store.save_day_plan(data_dir, plan)
 
 
 def _render_today(data_dir: Path) -> None:
     """Print today's plan, or a hint when there is none yet."""
-    plan = storage.load_day_plan(data_dir, date.today())
+    plan = store.load_day_plan(data_dir, date.today())
     if not plan.entries:
         console.print(
             "[grey62]No plan for today. Run `todo day` to build one.[/grey62]"
@@ -276,7 +276,7 @@ def add(
     cfg = load_repo_config(data_dir)
 
     if not title:
-        title = ui.text_input("Your todo...")
+        title = prompt.text_input("Your todo...")
         if not title:
             _err("Empty title, aborting.")
             raise typer.Exit(1)
@@ -295,7 +295,7 @@ def add(
         header="Horizon (Esc/(none) to skip)",
     )
 
-    todo = storage.create_todo(
+    todo = store.create_todo(
         data_dir,
         title=title,
         category=category,
@@ -315,7 +315,7 @@ def done():
     """Mark todos as completed (fzf multi-selection)."""
     data_dir, cfg, selected = _pick_active(multi=True)
     for t in selected:
-        storage.move_to_done(t, data_dir)
+        store.move_to_done(t, data_dir)
     _reflect_done_in_today(data_dir, [t.id for t in selected])
     _ok(f"{len(selected)} todo(s) completed.")
     auto_sync(data_dir, cfg, f"done: {len(selected)} todo(s)")
@@ -326,10 +326,10 @@ def done():
 def delete():
     """Permanently delete todos (fzf multi + gum confirmation)."""
     data_dir, cfg, selected = _pick_active(multi=True)
-    if not ui.confirm(f"Permanently delete {len(selected)} todo(s)?"):
-        raise ui.Cancelled()
+    if not prompt.confirm(f"Permanently delete {len(selected)} todo(s)?"):
+        raise prompt.Cancelled()
     for t in selected:
-        storage.delete_todo(t)
+        store.delete_todo(t)
     _ok(f"{len(selected)} todo(s) deleted.")
     auto_sync(data_dir, cfg, f"del: {len(selected)} todo(s)")
 
@@ -362,14 +362,14 @@ def day():
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
     today = date.today()
-    active = storage.list_active(data_dir)
+    active = store.list_active(data_dir)
     active_ids = {t.id for t in active}
-    plan = storage.load_day_plan(data_dir, today)
+    plan = store.load_day_plan(data_dir, today)
 
     # Rollover: only on the first `day` of a new day, and only for items whose
     # todo is still active (globally completed/deleted ones are dropped).
-    if not storage.plan_exists(data_dir, today):
-        previous = storage.latest_plan_before(data_dir, today)
+    if not store.plan_exists(data_dir, today):
+        previous = store.latest_plan_before(data_dir, today)
         if previous is not None:
             carry = [
                 e
@@ -380,19 +380,19 @@ def day():
                 f"Carry {len(carry)} unfinished item(s) "
                 f"from {previous.day.isoformat()}?"
             )
-            if carry and ui.confirm(prompt):
+            if carry and prompt.confirm(prompt):
                 for e in carry:
                     plan.entries.append(PlanEntry(todo_id=e.todo_id, title=e.title))
 
     candidates = [t for t in active if not plan.has(t.id)]
     if candidates:
-        for t in ui.select_todos(candidates, multi=True):
+        for t in prompt.select_todos(candidates, multi=True):
             plan.entries.append(PlanEntry(todo_id=t.id, title=t.title))
     elif not plan.entries:
         console.print("[grey62]No active todo to plan.[/grey62]")
         return
 
-    storage.save_day_plan(data_dir, plan)
+    store.save_day_plan(data_dir, plan)
     render_history([plan])
     _ok(f"Today's plan: {len(plan.entries)} item(s).")
     auto_sync(data_dir, cfg, f"day: plan {today.isoformat()}")
@@ -405,20 +405,20 @@ def doing():
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
     today = date.today()
-    plan = storage.load_day_plan(data_dir, today)
+    plan = store.load_day_plan(data_dir, today)
     planned = {e.todo_id for e in plan.entries if e.status is PlanStatus.PLANNED}
     if not planned:
         console.print("[grey62]No planned item today.[/grey62]")
         return
-    todos = [t for t in storage.list_active(data_dir) if t.id in planned]
-    selected = ui.select_todos(todos, multi=True)
+    todos = [t for t in store.list_active(data_dir) if t.id in planned]
+    selected = prompt.select_todos(todos, multi=True)
     if not selected:
         raise typer.Exit(1)
     for t in selected:
         entry = plan.find(t.id)
         if entry is not None:
             entry.status = PlanStatus.DOING
-    storage.save_day_plan(data_dir, plan)
+    store.save_day_plan(data_dir, plan)
     _ok(f"{len(selected)} item(s) in progress.")
     auto_sync(data_dir, cfg, f"doing: {len(selected)} item(s)")
 
@@ -433,7 +433,7 @@ def history(
     if today:
         _render_today(data_dir)
         return
-    render_history(storage.load_plans(data_dir))
+    render_history(store.load_plans(data_dir))
 
 
 # --------------------------------------------------------------------------- #
@@ -458,10 +458,10 @@ def show(
     cfg = load_repo_config(data_dir)
 
     if done_:
-        render_todos(storage.list_done(data_dir), cfg, title="Archive")
+        render_todos(store.list_done(data_dir), cfg, title="Archive")
         return
 
-    todos = storage.list_active(data_dir)
+    todos = store.list_active(data_dir)
     if category:
         if category not in cfg.categories:
             _warn(f"unknown category: {category!r}. Known: {', '.join(cfg.categories)}")

@@ -10,8 +10,8 @@ from rich.table import Table
 from rich.text import Text
 
 from .config import RepoConfig
-from .models import Todo, make_sort_key
 from .plan import DayPlan, PlanStatus
+from .todo import Todo, make_sort_key
 
 # Max table width: tables adapt to the terminal width but never exceed this
 # bound (readability on wide screens).

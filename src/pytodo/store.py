@@ -7,8 +7,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .config import DONE_DIRNAME, PLANS_DIRNAME, TODOS_DIRNAME
-from .models import Todo, load_todo
 from .plan import DayPlan, parse_plan
+from .todo import Todo, load_todo
 
 
 def todos_dir(data_dir: Path) -> Path:

@@ -14,7 +14,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 
-from .models import Todo
+from .todo import Todo
 
 
 class Cancelled(Exception):
