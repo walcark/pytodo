@@ -33,6 +33,6 @@ fmt = "ruff format ."
 fmt-check = "ruff format --check ."
 lint = "ruff check packages"
 type-check = "mypy -p neverland.core -p neverland.cli -p neverland.server"
-test = "pytest -q --cov=neverland --cov-report=term-missing"
+test = "pytest -q --cov=neverland --cov-report=term-missing --cov-report=xml"
 all = { depends-on = ["fmt", "lint", "type-check", "test"] }
 build-web = { cmd = "npm install && npm run build", cwd = "packages/server/frontend" }

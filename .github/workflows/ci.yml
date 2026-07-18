@@ -38,3 +38,13 @@ jobs:
 
     - name: Type check with mypy
       run: pixi run -e dev type-check
+
+    # Optional: publishes coverage to Codecov for the README badge. Kept
+    # non-blocking so CI stays green until the CODECOV_TOKEN secret is added.
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      continue-on-error: true
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: coverage.xml
+        slug: walcark/neverland
