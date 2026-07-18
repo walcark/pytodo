@@ -1280,21 +1280,21 @@ packages:
   - tzdata ; python_full_version >= '3.9' and sys_platform == 'win32' and extra == 'timezone'
   requires_python: '>=3.9'
 - pypi: packages/cli
-  name: pytodo-cli
+  name: neverland-cli
   requires_dist:
-  - pytodo-core==0.3.0
+  - neverland-core==0.4.0
   - typer>=0.12
   - rich>=13
   requires_python: '>=3.11'
 - pypi: packages/core
-  name: pytodo-core
+  name: neverland-core
   requires_dist:
   - pyyaml>=6
   requires_python: '>=3.11'
 - pypi: packages/server
-  name: pytodo-server
+  name: neverland-server
   requires_dist:
-  - pytodo-core==0.3.0
+  - neverland-core==0.4.0
   - fastapi>=0.110
   - uvicorn>=0.29
   requires_python: '>=3.11'

@@ -1,7 +1,7 @@
 import asyncio
 
-from pytodo.server import poller
-from pytodo.server.config import ServerConfig
+from neverland.server import poller
+from neverland.server.config import ServerConfig
 
 
 def _drive(config, ready_after=0.06):

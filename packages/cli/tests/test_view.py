@@ -1,6 +1,6 @@
 import os
 
-from pytodo.cli import view
+from neverland.cli import view
 
 
 def test_terminal_width_uses_ioctl_not_columns(monkeypatch):

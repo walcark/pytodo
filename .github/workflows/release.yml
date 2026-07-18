@@ -1,0 +1,95 @@
+name: Release
+
+# Publishes the three distributions to PyPI when a v* tag is pushed, via PyPI
+# Trusted Publishing (OIDC): no API token is stored.
+#
+# Each project uses its OWN GitHub environment (pypi-core / pypi-cli /
+# pypi-server). PyPI forbids two *pending* trusted publishers that share the
+# same (owner, repo, workflow, environment); a distinct environment per project
+# keeps each publisher configuration unique. Register one pending publisher per
+# project on PyPI, each pointing at this workflow and its matching environment.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The server wheel vendors the compiled SPA, so build it before packaging.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build the web UI
+        working-directory: packages/server/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install build backend
+        run: python -m pip install build
+
+      - name: Build sdists and wheels (one output dir per project)
+        run: |
+          for pkg in core cli server; do
+            python -m build "packages/$pkg" --outdir "dist/$pkg"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-core:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-core
+    permissions:
+      id-token: write # required for Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/core
+
+  publish-cli:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-cli
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/cli
+
+  publish-server:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi-server
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/server

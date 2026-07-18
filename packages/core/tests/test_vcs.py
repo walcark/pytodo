@@ -1,6 +1,6 @@
-from pytodo.core import store, vcs
-from pytodo.core.store import DONE_DIRNAME, TODOS_DIRNAME
-from pytodo.core.vocabulary import REPO_CONFIG_NAME
+from neverland.core import store, vcs
+from neverland.core.store import DONE_DIRNAME, TODOS_DIRNAME
+from neverland.core.vocabulary import REPO_CONFIG_NAME
 
 
 def test_setup_new_repo_scaffolds(tmp_path):

@@ -3,11 +3,11 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from pytodo.core import store
-from pytodo.core.plan import PlanEntry
-from pytodo.core.todo import TodoState
-from pytodo.server.app import create_app
-from pytodo.server.config import ServerConfig
+from neverland.core import store
+from neverland.core.plan import PlanEntry
+from neverland.core.todo import TodoState
+from neverland.server.app import create_app
+from neverland.server.config import ServerConfig
 
 
 @pytest.fixture

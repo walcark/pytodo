@@ -3,7 +3,7 @@
 The server is one more git writer, coordinated with the CLI and other devices
 through the remote. A long-running process must therefore *pull* on a timer to
 reflect changes made elsewhere (and push its own). This reuses
-:func:`pytodo.core.vcs.background_flush`, which already pulls, pushes, drains and
+:func:`neverland.core.vcs.background_flush`, which already pulls, pushes, drains and
 takes the shared lock, so the poller is only the "every N seconds" wrapper.
 
 The blocking git call runs in a threadpool so it never stalls the event loop,
@@ -15,11 +15,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from pytodo.core import vcs
+from neverland.core import vcs
 
 from .config import ServerConfig
 
-log = logging.getLogger("pytodo.server.poller")
+log = logging.getLogger("neverland.server.poller")
 
 
 async def run_poller(config: ServerConfig, stop: asyncio.Event) -> None:

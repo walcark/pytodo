@@ -1,14 +1,14 @@
 """The server is a frontend on core; it must not import a sibling frontend.
 
 Same guard as core's: the distribution boundary is only real if the import
-direction is. The server may use ``pytodo.core`` but never ``pytodo.cli``.
+direction is. The server may use ``neverland.core`` but never ``neverland.cli``.
 """
 
 import ast
 from pathlib import Path
 
-SERVER_SRC = Path(__file__).resolve().parents[1] / "src" / "pytodo" / "server"
-FORBIDDEN = ("pytodo.cli",)
+SERVER_SRC = Path(__file__).resolve().parents[1] / "src" / "neverland" / "server"
+FORBIDDEN = ("neverland.cli",)
 
 
 def _imported_modules(path: Path):

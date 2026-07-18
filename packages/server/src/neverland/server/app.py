@@ -24,7 +24,7 @@ DEFAULT_STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(config: ServerConfig, static_dir: Path | None = None) -> FastAPI:
-    """Build the pytodo FastAPI app for ``config``.
+    """Build the neverland FastAPI app for ``config``.
 
     The background git poller runs for the app's lifetime when
     ``config.poll_interval`` is positive (set it to 0 to disable, e.g. in tests).
@@ -57,7 +57,7 @@ def create_app(config: ServerConfig, static_dir: Path | None = None) -> FastAPI:
             if task is not None:
                 await task
 
-    app = FastAPI(title="pytodo", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="neverland", version="0.4.0", lifespan=lifespan)
     app.state.config = config
     app.include_router(api.router)
     _mount_web(app, static_dir or DEFAULT_STATIC_DIR)

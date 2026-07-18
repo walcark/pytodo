@@ -1,4 +1,4 @@
-"""Read API: the JSON endpoints that compose ``pytodo.core`` for the web UI.
+"""Read API: the JSON endpoints that compose ``neverland.core`` for the web UI.
 
 Everything here is read-only (v1). Endpoints are plain ``def`` so FastAPI runs
 them in a threadpool: core is synchronous (file I/O and git), which must not
@@ -11,9 +11,9 @@ from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
-from pytodo.core import service, store, vcs
-from pytodo.core.todo import Todo, TodoState
-from pytodo.core.vocabulary import load_repo_config
+from neverland.core import service, store, vcs
+from neverland.core.todo import Todo, TodoState
+from neverland.core.vocabulary import load_repo_config
 
 from .config import ServerConfig
 from .schemas import (
@@ -24,8 +24,10 @@ from .schemas import (
     ViewsOut,
     VocabularyOut,
 )
+from .security import require_token
 
-router = APIRouter(prefix="/api")
+# The token guard runs before every endpoint (no-op when no token is set).
+router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
 
 # Views backed by a single state; "all" and "today" are handled specially.
 _STATE_VIEWS = {

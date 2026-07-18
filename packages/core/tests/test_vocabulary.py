@@ -1,4 +1,4 @@
-from pytodo.core.vocabulary import (
+from neverland.core.vocabulary import (
     DEFAULT_AREAS,
     DEFAULT_CONTEXTS,
     RepoConfig,

@@ -10,7 +10,7 @@ exclude = [".pixi"]
 select = ["E", "F", "I", "UP", "B", "TID"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["pytodo"]
+known-first-party = ["neverland"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection idiom: Depends()/Query() as argument defaults.

@@ -1,7 +1,9 @@
-# todo
+# neverland
+
+<p align="center"><em>Growing up means remembering deadlines. Neverland remembers them for you.</em></p>
 
 <p align="center">
-  <img src="https://github.com/walcark/pytodo/actions/workflows/ci.yml/badge.svg">
+  <img src="https://github.com/walcark/neverland/actions/workflows/ci.yml/badge.svg">
   <a href="https://pixi.sh"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/prefix-dev/pixi/main/assets/badge/v0.json"></a>
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue">
@@ -41,17 +43,35 @@ another device: todo sync  <-- pull ------------------------------------ +
 
 ## Install
 
-pytodo is a monorepo of two distributions: `pytodo-core` (the domain, storage
-and git sync) and `pytodo-cli` (the `todo` command). The CLI depends on the
-core. Until they are published to PyPI, install both from the checkout:
+neverland is a monorepo of three distributions sharing the `neverland` namespace:
+
+| Distribution | Import | What it is |
+| --- | --- | --- |
+| `neverland-core` | `neverland.core` | Domain model, file storage, git sync (UI-agnostic). |
+| `neverland-cli` | `neverland.cli` | The `todo` command. Depends on core. |
+| `neverland-server` | `neverland.server` | FastAPI server + web UI. Depends on core. |
+
+Install just the CLI (the common case):
 
 ```sh
-pip install ./packages/core ./packages/cli
+pipx install neverland-cli        # pulls neverland-core on its own
 ```
 
-This exposes the `todo` command. Once published, `pipx install pytodo-cli` will
-pull `pytodo-core` on its own. For hacking on the code, use pixi instead (see
-[Development](#development)), which installs both packages editable.
+Add the web server when you want it (see [Web server](#web-server)):
+
+```sh
+pipx install neverland-server
+```
+
+From a checkout, before/instead of PyPI:
+
+```sh
+pip install ./packages/core ./packages/cli          # the todo command
+pip install ./packages/core ./packages/server       # the server
+```
+
+For hacking on the code, use pixi instead (see [Development](#development)),
+which installs all three editable.
 
 ## Setup a data repo
 
@@ -263,8 +283,84 @@ Automatic background sync is controlled by `sync.auto` in the repo's
 push manually with `todo sync`.
 
 > Internally, every mutation goes through a single UI-agnostic **service** layer
-> (`pytodo.core.service`) that commits then schedules the flush, so the CLI (and
+> (`neverland.core.service`) that commits then schedules the flush, so the CLI (and
 > a future server) share one write path.
+
+## Web server
+
+`neverland-server` serves a small web app (a [Planify](https://github.com/alainm23/planify)-style
+layout: a sidebar of views, areas and contexts on the left, the todo list on the
+right) plus a JSON API, on top of the same data repo the CLI uses. v1 is a
+**viewer + quick capture**: browse your todos and drop new ones into the inbox.
+Any write is committed to the data repo exactly like the CLI does, and a
+background poller keeps the server's view fresh by pulling the remote.
+
+It is a separate frontend on the shared core, so the JSON API under `/api` is the
+reuse surface: `create_app(config)` is a public factory if you want to build your
+own UI on top.
+
+### Quick start (local)
+
+```sh
+neverland-server setup --data-dir ~/todo-data   # writes the config + an access token
+neverland-server run                            # serves http://127.0.0.1:8000
+```
+
+`setup` writes `~/.config/neverland/server.env` (mode `0600`) with the bind address,
+port and a generated token, and prints the token once. `run` reads that file
+(real `NEVERLAND_SERVER_*` environment variables override it), so no flags are
+needed on subsequent starts. With no `--data-dir`, `setup` reuses the CLI's
+active repo.
+
+### Access token
+
+The API is guarded by a **bearer token** (defence in depth behind the network
+boundary): every `/api` request must send `Authorization: Bearer <token>`. The
+token is mandatory as soon as the server binds anything other than loopback:
+`run` refuses a non-loopback bind without one.
+
+In the browser, the SPA shell loads without a token; the first API call gets a
+`401` and the page **prompts for the token once**, then stores it in
+`localStorage` and stops asking. Clear it with
+`localStorage.removeItem('neverland_token')` (or use a private window) to re-enter
+it, e.g. from a new device. A no-token server (loopback dev) skips all of this.
+
+### Deploy (systemd + wireguard)
+
+```sh
+neverland-server install    # writes a systemd *user* unit and enables/starts it
+```
+
+`install` renders `~/.config/systemd/user/neverland-server.service` (loading the
+`setup` env file via `EnvironmentFile=`), then runs `systemctl --user
+daemon-reload` and `enable --now`. Pass `--no-start` to only write the unit and
+print the commands. To keep it running after logout / across reboots:
+
+```sh
+loginctl enable-linger $USER
+```
+
+To expose it to other devices, **bind the wireguard interface, never `0.0.0.0`
+publicly** (the security boundary is the tunnel; the token is the second layer).
+Edit `NEVERLAND_SERVER_HOST` in `~/.config/neverland/server.env` and restart:
+
+```sh
+systemctl --user restart neverland-server
+```
+
+neverland does not manage wireguard itself. A container (Podman/Quadlet) can replace
+systemd later for free, since the server is a single `neverland-server run` process
+reading the same environment.
+
+### Configuration (`NEVERLAND_SERVER_*`)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NEVERLAND_SERVER_DATA_DIR` | the CLI's active repo | Data repo to serve. |
+| `NEVERLAND_SERVER_HOST` | `127.0.0.1` | Bind address (loopback, or the wireguard IP). |
+| `NEVERLAND_SERVER_PORT` | `8000` | Bind port. |
+| `NEVERLAND_SERVER_TOKEN` | (none) | Access token; required for a non-loopback bind. |
+| `NEVERLAND_SERVER_POLL_INTERVAL` | `30` | Seconds between background pulls (`0` disables). |
 
 ## Configuration
 
@@ -327,11 +423,12 @@ plumber about the leak"), not a topic ("Plumber"). `todo clarify` asks for it.
 
 ## Development
 
-The two distributions live under `packages/core` and `packages/cli`, each with
-its own `pyproject.toml` and co-located tests. The pixi workspace (`pixi.toml`)
-installs both editable; shared tooling config (ruff/mypy/pytest) is in the root
-`pyproject.toml`, which itself builds nothing. `core` may not import `cli`,
-enforced by a ruff rule and `packages/core/tests/test_layering.py`.
+The three distributions live under `packages/{core,cli,server}`, each with its
+own `pyproject.toml` and co-located tests. The pixi workspace (`pixi.toml`)
+installs all three editable; shared tooling config (ruff/mypy/pytest) is in the
+root `pyproject.toml`, which itself builds nothing. Application layers (`cli`,
+`server`) may import `core` but never each other, enforced by ruff rules and the
+`test_layering.py` tests.
 
 ```sh
 pixi run -e dev lint         # ruff check
@@ -339,10 +436,29 @@ pixi run -e dev fmt          # ruff format
 pixi run -e dev type-check   # mypy
 pixi run -e dev test         # pytest + coverage
 pixi run -e dev all          # all of the above
+pixi run -e dev build-web    # compile the server's React SPA
 ```
 
 CI (GitHub Actions) runs lint, test and type-check on every push / PR to
 `main` (see `.github/workflows/ci.yml`).
+
+### Releasing
+
+Versions are kept in lockstep across the three distributions. To cut a release:
+
+1. Bump `version` in the three `packages/*/pyproject.toml` (and the
+   `neverland-core==` pins in cli/server) to the new `X.Y.Z`.
+2. Commit, then tag and push:
+
+   ```sh
+   git tag -a vX.Y.Z -m "vX.Y.Z"
+   git push origin main --tags
+   ```
+
+The `v*` tag triggers `.github/workflows/release.yml`, which builds the SPA,
+packages the three sdists+wheels and publishes them to PyPI via Trusted
+Publishing (no stored token). The `pypi` environment must have a publisher
+configured for each project on PyPI first.
 
 ## License
 

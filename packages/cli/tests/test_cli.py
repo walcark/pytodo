@@ -1,8 +1,8 @@
 import pytest
 import typer
 
-from pytodo.cli import prompt
-from pytodo.cli.main import handle_errors
+from neverland.cli import prompt
+from neverland.cli.main import handle_errors
 
 
 @pytest.mark.parametrize("code", [0, 1, 2])

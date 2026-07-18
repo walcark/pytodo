@@ -2,12 +2,12 @@
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
-# Both distributions installed editable, so the CLI resolves its `pytodo-core`
+# Both distributions installed editable, so the CLI resolves its `neverland-core`
 # dependency against the local source, not PyPI.
 [pypi-dependencies]
-pytodo-core = { path = "packages/core", editable = true }
-pytodo-cli = { path = "packages/cli", editable = true }
-pytodo-server = { path = "packages/server", editable = true }
+neverland-core = { path = "packages/core", editable = true }
+neverland-cli = { path = "packages/cli", editable = true }
+neverland-server = { path = "packages/server", editable = true }
 
 [dependencies]
 python = ">=3.11"
@@ -32,7 +32,7 @@ nodejs = "*"     # builds the React SPA (packages/server/web)
 fmt = "ruff format ."
 fmt-check = "ruff format --check ."
 lint = "ruff check packages"
-type-check = "mypy -p pytodo.core -p pytodo.cli -p pytodo.server"
-test = "pytest -q --cov=pytodo --cov-report=term-missing"
+type-check = "mypy -p neverland.core -p neverland.cli -p neverland.server"
+test = "pytest -q --cov=neverland --cov-report=term-missing"
 all = { depends-on = ["fmt", "lint", "type-check", "test"] }
 build-web = { cmd = "npm install && npm run build", cwd = "packages/server/frontend" }

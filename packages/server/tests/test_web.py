@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from pytodo.server.app import create_app
-from pytodo.server.config import ServerConfig
+from neverland.server.app import create_app
+from neverland.server.config import ServerConfig
 
 
 def _client(tmp_path, static_dir):
@@ -12,7 +12,7 @@ def _client(tmp_path, static_dir):
 def _built_static(tmp_path):
     static = tmp_path / "static"
     static.mkdir()
-    (static / "index.html").write_text("<!doctype html><title>pytodo</title>")
+    (static / "index.html").write_text("<!doctype html><title>neverland</title>")
     return static
 
 
@@ -20,7 +20,7 @@ def test_serves_index_when_built(tmp_path):
     client = _client(tmp_path, _built_static(tmp_path))
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "pytodo" in resp.text
+    assert "neverland" in resp.text
 
 
 def test_hint_when_not_built(tmp_path):

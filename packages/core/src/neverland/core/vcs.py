@@ -583,7 +583,7 @@ def background_flush(data_dir: Path) -> None:
 
 
 def spawn_background_flush(data_dir: Path) -> None:
-    """Launch ``python -m pytodo.core _flush <data_dir>`` as a detached process.
+    """Launch ``python -m neverland.core _flush <data_dir>`` as a detached process.
 
     Parameters
     ----------
@@ -592,7 +592,7 @@ def spawn_background_flush(data_dir: Path) -> None:
     """
     try:
         subprocess.Popen(
-            [sys.executable, "-m", "pytodo.core", "_flush", str(data_dir)],
+            [sys.executable, "-m", "neverland.core", "_flush", str(data_dir)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,

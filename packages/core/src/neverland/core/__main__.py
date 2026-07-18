@@ -1,7 +1,7 @@
-"""Enable ``python -m pytodo.core _flush <data_dir>`` for the detached sync.
+"""Enable ``python -m neverland.core _flush <data_dir>`` for the detached sync.
 
 Only the background sync worker respawns the interpreter this way (see
-:func:`pytodo.core.vcs.spawn_background_flush`). It lives in core, not in an
+:func:`neverland.core.vcs.spawn_background_flush`). It lives in core, not in an
 application layer, so the worker never depends on the CLI or the server.
 """
 

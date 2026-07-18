@@ -20,11 +20,11 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
-from pytodo.core import service, store, vcs
-from pytodo.core.plan import PlanEntry, PlanStatus
-from pytodo.core.settings import read_data_dir, write_data_dir
-from pytodo.core.todo import Todo, TodoState, sort_key
-from pytodo.core.vocabulary import RepoConfig, load_repo_config
+from neverland.core import service, store, vcs
+from neverland.core.plan import PlanEntry, PlanStatus
+from neverland.core.settings import read_data_dir, write_data_dir
+from neverland.core.todo import Todo, TodoState, sort_key
+from neverland.core.vocabulary import RepoConfig, load_repo_config
 
 from . import prompt
 from .view import console, render_history, render_todos

@@ -37,7 +37,7 @@ export default function Sidebar({ views, vocab, selection, onSelect }) {
 
   return (
     <nav className="sidebar">
-      <div className="brand">pytodo</div>
+      <div className="brand">neverland</div>
 
       <div className="nav-group">
         {FIXED_VIEWS.map((v) => (

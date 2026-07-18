@@ -2,7 +2,7 @@
 
 This is the *only* per-machine state. Everything else that configures todo is
 versioned inside the data repo and shared across devices (see
-:mod:`pytodo.core.vocabulary`). Keeping the two apart is what makes the vocabulary a
+:mod:`neverland.core.vocabulary`). Keeping the two apart is what makes the vocabulary a
 domain concern rather than a config file.
 """
 

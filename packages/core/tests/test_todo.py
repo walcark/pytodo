@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from pytodo.core.todo import Todo, TodoState, parse_markdown, sort_key
+from neverland.core.todo import Todo, TodoState, parse_markdown, sort_key
 
 
 def test_roundtrip_markdown():

@@ -11,9 +11,9 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from pytodo.core.plan import DayPlan, PlanEntry
-from pytodo.core.project import Project
-from pytodo.core.todo import Todo
+from neverland.core.plan import DayPlan, PlanEntry
+from neverland.core.project import Project
+from neverland.core.todo import Todo
 
 
 class CaptureIn(BaseModel):

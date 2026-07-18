@@ -1,17 +1,17 @@
 [project]
-name = "pytodo-server"
-version = "0.3.0"
-description = "Self-hosted FastAPI server and web UI for pytodo (frontend on the shared core)."
+name = "neverland-server"
+version = "0.4.0"
+description = "Self-hosted FastAPI server and web UI for neverland (frontend on the shared core)."
 authors = [{name = "walcark", email = "kevin.walcarius@cnes.fr"}]
 requires-python = ">=3.11"
 dependencies = [
-    "pytodo-core==0.3.0",
+    "neverland-core==0.4.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]
 
 [project.scripts]
-pytodo-server = "pytodo.server.cli:main"
+neverland-server = "neverland.server.cli:main"
 
 [build-system]
 build-backend = "hatchling.build"
@@ -19,9 +19,14 @@ requires = ["hatchling"]
 
 [tool.hatch.build.targets.wheel]
 sources = ["src"]
-only-include = ["src/pytodo/server"]
+only-include = ["src/neverland/server"]
 # The compiled SPA is git-ignored (a build artifact); force it into the wheel.
-artifacts = ["src/pytodo/server/static/**"]
+artifacts = ["src/neverland/server/static/**"]
+
+# The sdist must carry the compiled SPA too, so a build from sdist is complete
+# (the frontend/ sources ship as well, but the static assets are what runs).
+[tool.hatch.build.targets.sdist]
+artifacts = ["src/neverland/server/static/**"]
 
 # server, like cli, is an application layer: it may use core, never a sibling
 # frontend. Enforced here and by tests/test_layering.py.
@@ -29,4 +34,4 @@ artifacts = ["src/pytodo/server/static/**"]
 extend = "../../pyproject.toml"
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"pytodo.cli".msg = "server must not import cli (layering); see docs/model.md."
+"neverland.cli".msg = "server must not import cli (layering); see docs/model.md."

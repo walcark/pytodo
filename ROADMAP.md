@@ -151,11 +151,11 @@ over-engineer it.
 
 ## 4. Frontends beyond the CLI (mobile & desktop)
 
-All of these are **frontends on the shared core**: they reuse pytodo's library
+All of these are **frontends on the shared core**: they reuse neverland's library
 layer (`storage` / `gitrepo` / `config` / `models` / `plan`) and swap only the
 edges (`ui.py` fzf/gum, `render.py` rich). None of them reimplement the todo
 logic or shell out to the CLI. 4a is a no-server fallback for mobile capture,
-4b (`pytodo-server`) is the real mobile answer, 4c is the desktop GUI.
+4b (`neverland-server`) is the real mobile answer, 4c is the desktop GUI.
 
 The dominant mobile need is **capture** — dropping a task the moment it comes to
 mind — not full management. Completing / reorganizing can stay on desktop / CLI.
@@ -167,7 +167,7 @@ Two mobile options, ordered by infrastructure cost.
 
 ### 4a. Inbox + synced folder (no server) — optional fallback
 
-Only worth it if the `pytodo-server` (4b) is not up yet: it needs no server at
+Only worth it if the `neverland-server` (4b) is not up yet: it needs no server at
 all. Once 4b exists, its "quick add" field covers capture and this becomes
 redundant.
 
@@ -185,11 +185,11 @@ Nextcloud Notes, Syncthing, or similar) *appends a raw line*. On desktop a new
   never todos to begin with.
 - Nextcloud (or Syncthing) is used here purely as a **file-sync transport**.
 
-### 4b. `pytodo-server`: self-hosted web app / PWA — the real mobile answer
+### 4b. `neverland-server`: self-hosted web app / PWA — the real mobile answer
 
 Goal: usable from the **phone's browser, zero install** (optionally "add to home
 screen" as a PWA — app-like, no app store). A web page that *mutates* todos
-needs a backend, so this is a small self-hosted server, `pytodo-server`, on one
+needs a backend, so this is a small self-hosted server, `neverland-server`, on one
 always-on machine (home server / Raspberry Pi / small VPS). It **subsumes 4a**:
 with a real server, mobile capture is just a "quick add" field.
 
@@ -199,7 +199,7 @@ Architecture (one process):
    phone (browser / PWA)
         │  HTTP(S)
         ▼
-  pytodo-server ── import pytodo (storage / plan / models / gitrepo / config)
+  neverland-server ── import neverland (storage / plan / models / gitrepo / config)
    - serves the PWA (HTML/JS)
    - read/write API: GET /today /stock ; POST /add /done /doing /day
    - sync orchestration (shared auto_sync)
@@ -212,7 +212,7 @@ Architecture (one process):
   desktop CLI
 ```
 
-- **Frontend on the shared core**: the server `import`s pytodo and calls the
+- **Frontend on the shared core**: the server `import`s neverland and calls the
   same functions as the CLI (`storage.*`, `create_todo`, `gitrepo.sync`), never
   shells out. It replaces the edges (`ui.py` → tap targets, `render.py` → HTML).
 - **"Connect a personal repo" = a git remote + credentials.** The model is
@@ -230,7 +230,7 @@ Architecture (one process):
 Operational must-haves:
 
 - **Reachability**: **Tailscale** (or WireGuard) is the sweet spot — the phone
-  joins the tailnet and reaches `http://pytodo.<tailnet>` with **no public
+  joins the tailnet and reaches `http://neverland.<tailnet>` with **no public
   exposure, no open ports**. Alternatives if a public URL is wanted: Caddy +
   Let's Encrypt + auth, or a Cloudflare Tunnel.
 - **Auth is mandatory**, even behind the VPN: a single-user token / basic auth.
@@ -248,8 +248,8 @@ git host or file-sync transport, not the store.
 
 ### 4c. Desktop GUI (pure frontend on the shared core) — later
 
-A more visual desktop app, built as a **separate `pytodo-gui` package** that
-depends on `pytodo` and reuses its library directly (never shelling out to the
+A more visual desktop app, built as a **separate `neverland-gui` package** that
+depends on `neverland` and reuses its library directly (never shelling out to the
 CLI, whose output is for humans). The GUI swaps only the edges for widgets; the
 core is already UI-agnostic.
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 
-from pytodo.core.todo import Todo
+from neverland.core.todo import Todo
 
 
 class Cancelled(Exception):

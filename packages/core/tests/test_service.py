@@ -2,11 +2,11 @@ from datetime import date
 
 import pytest
 
-from pytodo.core import service, store, vcs
-from pytodo.core.plan import PlanEntry, PlanStatus
-from pytodo.core.store import done_dir, todos_dir
-from pytodo.core.todo import TodoState
-from pytodo.core.vocabulary import RepoConfig, load_repo_config
+from neverland.core import service, store, vcs
+from neverland.core.plan import PlanEntry, PlanStatus
+from neverland.core.store import done_dir, todos_dir
+from neverland.core.todo import TodoState
+from neverland.core.vocabulary import RepoConfig, load_repo_config
 
 
 @pytest.fixture
