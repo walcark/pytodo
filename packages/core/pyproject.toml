@@ -2,6 +2,7 @@
 name = "neverland-core"
 version = "0.4.0"
 description = "GTD todo domain model, file storage and git sync (UI-agnostic core)."
+readme = "README.md"
 authors = [{name = "walcark", email = "kevin.walcarius@cnes.fr"}]
 requires-python = ">=3.11"
 dependencies = [
