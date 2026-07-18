@@ -2,11 +2,11 @@ from datetime import date
 
 import pytest
 
-from pytodo import service, store, vcs
-from pytodo.plan import PlanEntry, PlanStatus
-from pytodo.store import done_dir, todos_dir
-from pytodo.todo import TodoState
-from pytodo.vocabulary import RepoConfig, load_repo_config
+from pytodo.core import service, store, vcs
+from pytodo.core.plan import PlanEntry, PlanStatus
+from pytodo.core.store import done_dir, todos_dir
+from pytodo.core.todo import TodoState
+from pytodo.core.vocabulary import RepoConfig, load_repo_config
 
 
 @pytest.fixture

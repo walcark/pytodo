@@ -23,7 +23,7 @@ from .todo import _coerce_datetime
 
 
 class ProjectState(Enum):
-    """Engagement level of a project, mirroring :class:`~pytodo.todo.TodoState`.
+    """Engagement level of a project, mirroring :class:`~pytodo.core.todo.TodoState`.
 
     There is no ``inbox``: a project only exists once you have clarified that
     the thing is multi-step, so it is born ``ACTIVE`` or ``SOMEDAY``.

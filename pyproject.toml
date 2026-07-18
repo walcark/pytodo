@@ -1,52 +1,5 @@
-[project]
-authors = [{name = "walcark", email = "kevin.walcarius@cnes.fr"}]
-dependencies = [
-    "typer>=0.12",
-    "rich>=13",
-    "pyyaml>=6",
-]
-name = "pytodo"
-requires-python = ">= 3.11"
-version = "0.2.0"
-
-[project.scripts]
-todo = "pytodo.cli:app"
-
-[build-system]
-build-backend = "hatchling.build"
-requires = ["hatchling"]
-
-[tool.pixi.workspace]
-channels = ["conda-forge"]
-platforms = ["linux-64"]
-
-[tool.pixi.pypi-dependencies]
-pytodo = { path = ".", editable = true }
-
-[tool.pixi.dependencies]
-python = ">=3.11"
-fzf = "*"
-
-[tool.pixi.tasks]
-todo = "todo"
-
-[tool.pixi.environments]
-default = { solve-group = "default" }
-dev = { features = ["dev"], solve-group = "default" }
-
-[tool.pixi.feature.dev.dependencies]
-ruff = "*"
-mypy = ">=1.5"
-pytest = "*"
-pytest-cov = ">=6.0"
-
-[tool.pixi.feature.dev.tasks]
-fmt = "ruff format ."
-fmt-check = "ruff format --check ."
-lint = "ruff check src tests"
-type-check = "mypy src/pytodo"
-test = "pytest -q --cov=src/pytodo --cov-report=term-missing"
-all = { depends-on = ["fmt", "lint", "type-check", "test"] }
+# Root holds shared tooling config only; it builds no distribution. The pixi
+# workspace lives in pixi.toml, the two distributions in packages/*/pyproject.toml.
 
 [tool.ruff]
 line-length = 88
@@ -54,9 +7,17 @@ target-version = "py311"
 exclude = [".pixi"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "TID"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pytodo"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
+namespace_packages = true
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["packages/core/tests", "packages/cli/tests"]

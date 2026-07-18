@@ -1,7 +1,7 @@
 """Filesystem operations on the todo tree (git-independent).
 
 Owns the on-disk layout of the data repo, hence the directory names live here:
-:mod:`pytodo.vcs` scaffolds the layout that this module reads.
+:mod:`pytodo.core.vcs` scaffolds the layout that this module reads.
 
 One markdown file per todo, per project and per day. A todo's ``state`` is a
 front matter field, not a directory: only completion moves a file (to
@@ -83,7 +83,7 @@ def list_by_state(data_dir: Path, state: TodoState) -> list[Todo]:
     -------
     list of Todo
         Matching todos, in directory order (callers sort with
-        :func:`pytodo.todo.sort_key`).
+        :func:`pytodo.core.todo.sort_key`).
     """
     return [todo for todo in list_active(data_dir) if todo.state is state]
 

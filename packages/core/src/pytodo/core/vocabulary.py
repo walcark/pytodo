@@ -4,7 +4,7 @@ This is *domain*, not configuration: which areas and contexts exist defines
 what a todo can mean, and the answer must be identical on every device, so it
 lives in ``<data_dir>/config.toml`` and travels with the data. Where that data
 directory sits is the only genuinely machine-local thing, and it lives in
-:mod:`pytodo.settings`.
+:mod:`pytodo.core.settings`.
 
 Both sets are flat and unordered. Nothing ranks them: the ordered
 ``Scale``/``make_sort_key`` machinery existed only to serve ``urgency`` and

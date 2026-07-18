@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from pytodo import store
-from pytodo.store import DONE_DIRNAME, PROJECTS_DIRNAME, TODOS_DIRNAME
-from pytodo.todo import TodoState, load_todo
+from pytodo.core import store
+from pytodo.core.store import DONE_DIRNAME, PROJECTS_DIRNAME, TODOS_DIRNAME
+from pytodo.core.todo import TodoState, load_todo
 
 
 def test_new_id_format():

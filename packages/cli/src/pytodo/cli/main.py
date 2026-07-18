@@ -20,12 +20,14 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
-from . import prompt, service, store, vcs
-from .plan import PlanEntry, PlanStatus
-from .settings import read_data_dir, write_data_dir
-from .todo import Todo, TodoState, sort_key
+from pytodo.core import service, store, vcs
+from pytodo.core.plan import PlanEntry, PlanStatus
+from pytodo.core.settings import read_data_dir, write_data_dir
+from pytodo.core.todo import Todo, TodoState, sort_key
+from pytodo.core.vocabulary import RepoConfig, load_repo_config
+
+from . import prompt
 from .view import console, render_history, render_todos
-from .vocabulary import RepoConfig, load_repo_config
 
 app = typer.Typer(
     help="Manage todos synchronized through git.",
@@ -714,15 +716,6 @@ def sync():
         _ok("Synchronized.")
     else:
         console.print("[grey62]Already up to date.[/grey62]")
-
-
-@app.command("_flush", hidden=True)
-def flush(data_dir: str):
-    """Internal: detached background sync (spawned via `python -m pytodo _flush`)."""
-    try:
-        vcs.background_flush(Path(data_dir))
-    except Exception:
-        pass  # detached process: never crash loudly
 
 
 if __name__ == "__main__":

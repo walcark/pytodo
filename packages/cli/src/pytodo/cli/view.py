@@ -9,8 +9,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from .plan import DayPlan, PlanStatus
-from .todo import Todo, TodoState, sort_key
+from pytodo.core.plan import DayPlan, PlanStatus
+from pytodo.core.todo import Todo, TodoState, sort_key
 
 # Max table width: tables adapt to the terminal width but never exceed this
 # bound (readability on wide screens).

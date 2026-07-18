@@ -2,7 +2,7 @@ import builtins
 
 import pytest
 
-from pytodo import prompt
+from pytodo.cli import prompt
 
 
 def test_text_input_fallback_without_gum(monkeypatch):
@@ -42,13 +42,13 @@ def test_ensure_fzf_raises_when_absent(monkeypatch):
 
 
 def test_format_line_leads_with_state_and_context():
-    from pytodo.todo import Todo, TodoState
+    from pytodo.core.todo import Todo, TodoState
 
     t = Todo(id="1", title="Pay", state=TodoState.NEXT, context="@phone", area="admin")
     assert prompt.format_line(t) == "[next] [@phone] Pay (admin)"
 
 
 def test_format_line_omits_unset_fields():
-    from pytodo.todo import Todo
+    from pytodo.core.todo import Todo
 
     assert prompt.format_line(Todo(id="1", title="Bare")) == "[inbox] Bare"

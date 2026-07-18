@@ -1,4 +1,4 @@
-from pytodo.vocabulary import (
+from pytodo.core.vocabulary import (
     DEFAULT_AREAS,
     DEFAULT_CONTEXTS,
     RepoConfig,

@@ -1,0 +1,25 @@
+[project]
+name = "pytodo-core"
+version = "0.3.0"
+description = "GTD todo domain model, file storage and git sync (UI-agnostic core)."
+authors = [{name = "walcark", email = "kevin.walcarius@cnes.fr"}]
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6",
+]
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build.targets.wheel]
+sources = ["src"]
+only-include = ["src/pytodo/core"]
+
+# core must not import an application layer; enforced here (fast feedback) and
+# by tests/test_layering.py (the guarantee). Extends the shared root config.
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"pytodo.cli".msg = "core must not import cli (layering); see docs/model.md."
