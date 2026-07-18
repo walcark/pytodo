@@ -25,7 +25,8 @@ ruff = "*"
 mypy = ">=1.5"
 pytest = "*"
 pytest-cov = ">=6.0"
-httpx = "*"   # FastAPI TestClient
+httpx = "*"      # FastAPI TestClient
+nodejs = "*"     # builds the React SPA (packages/server/web)
 
 [feature.dev.tasks]
 fmt = "ruff format ."
@@ -34,3 +35,4 @@ lint = "ruff check packages"
 type-check = "mypy -p pytodo.core -p pytodo.cli -p pytodo.server"
 test = "pytest -q --cov=pytodo --cov-report=term-missing"
 all = { depends-on = ["fmt", "lint", "type-check", "test"] }
+build-web = { cmd = "npm install && npm run build", cwd = "packages/server/frontend" }

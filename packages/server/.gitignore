@@ -1,0 +1,4 @@
+# Frontend build artifacts (rebuilt by `pixi run build-web`, shipped in the wheel)
+frontend/node_modules/
+frontend/dist/
+src/pytodo/server/static/

@@ -20,6 +20,8 @@ requires = ["hatchling"]
 [tool.hatch.build.targets.wheel]
 sources = ["src"]
 only-include = ["src/pytodo/server"]
+# The compiled SPA is git-ignored (a build artifact); force it into the wheel.
+artifacts = ["src/pytodo/server/static/**"]
 
 # server, like cli, is an application layer: it may use core, never a sibling
 # frontend. Enforced here and by tests/test_layering.py.
