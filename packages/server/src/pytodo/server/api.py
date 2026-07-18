@@ -9,14 +9,15 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
-from pytodo.core import store
+from pytodo.core import service, store, vcs
 from pytodo.core.todo import Todo, TodoState
 from pytodo.core.vocabulary import load_repo_config
 
 from .config import ServerConfig
 from .schemas import (
+    CaptureIn,
     DayPlanOut,
     NamedCount,
     TodoOut,
@@ -116,3 +117,28 @@ def read_today(cfg: ServerConfig = Depends(get_config)) -> DayPlanOut:
     """Return today's plan (entries with their per-day status)."""
     plan = store.load_day_plan(cfg.data_dir, date.today())
     return DayPlanOut.from_plan(plan)
+
+
+@router.post("/capture", response_model=TodoOut, status_code=201)
+def capture(
+    payload: CaptureIn,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> TodoOut:
+    """Capture a todo into the inbox (GTD capture, zero decisions).
+
+    The write is committed locally right away; the network push is left to the
+    poller, plus one immediate background flush so a capture propagates without
+    waiting a full poll interval. Both take the shared lock, so they never
+    collide.
+    """
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+
+    repo = load_repo_config(cfg.data_dir)
+    repo.sync_auto = False  # the poller owns the network sync, not a subprocess
+    todo, _ = service.capture(cfg.data_dir, repo, title)
+
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return TodoOut.from_todo(todo)

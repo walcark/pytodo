@@ -16,6 +16,12 @@ from pytodo.core.project import Project
 from pytodo.core.todo import Todo
 
 
+class CaptureIn(BaseModel):
+    """Payload of a quick capture: just a title, straight to the inbox."""
+
+    title: str
+
+
 class TodoOut(BaseModel):
     """A todo as sent to the client (no body, no filesystem path)."""
 

@@ -32,7 +32,7 @@ def client(tmp_path):
     plan.entries.append(PlanEntry(todo_id=next_todo.id, title=next_todo.title))
     store.save_day_plan(tmp_path, plan)
 
-    config = ServerConfig(data_dir=tmp_path)
+    config = ServerConfig(data_dir=tmp_path, poll_interval=0)  # no poller in tests
     return TestClient(create_app(config))
 
 
