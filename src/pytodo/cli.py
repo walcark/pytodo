@@ -20,12 +20,12 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
-from . import prompt, store, vcs
+from . import prompt, service, store, vcs
 from .plan import PlanEntry, PlanStatus
 from .settings import read_data_dir, write_data_dir
 from .todo import Todo, TodoState, sort_key
 from .view import console, render_history, render_todos
-from .vocabulary import RepoConfig, load_repo_config, save_repo_config
+from .vocabulary import RepoConfig, load_repo_config
 
 app = typer.Typer(
     help="Manage todos synchronized through git.",
@@ -105,32 +105,12 @@ def require_data_dir() -> Path:
 
 
 def _emit_sync(result: vcs.SyncResult) -> None:
+    """Render the warnings/conflicts of a sync returned by the service layer."""
     for w in result.warnings:
         _warn(w)
     if result.conflict_files:
         _err("Rebase conflict on: " + ", ".join(result.conflict_files))
         _err("Resolve it manually in the repo, then run `todo sync`.")
-
-
-def auto_sync(data_dir: Path, cfg: RepoConfig, message: str) -> None:
-    """Sync after a mutation.
-
-    Commit locally right away (instant), then delegate pull/push to a detached
-    process so that ``add``/``del`` return immediately.
-
-    Parameters
-    ----------
-    data_dir : pathlib.Path
-        Data repo root.
-    cfg : RepoConfig
-        Active repo config (its ``sync_auto`` gates the background network sync).
-    message : str
-        Commit message for the local commit.
-    """
-    result = vcs.sync(data_dir, message=message, network=False)
-    _emit_sync(result)
-    if cfg.sync_auto:
-        vcs.spawn_background_flush(data_dir)
 
 
 def open_editor(path: Path) -> None:
@@ -196,27 +176,6 @@ def _pick_active(*, multi: bool) -> tuple[Path, RepoConfig, list[Todo]]:
     if not selected:
         raise typer.Exit(1)
     return data_dir, cfg, selected
-
-
-def _reflect_done_in_today(data_dir: Path, todo_ids: list[str]) -> None:
-    """Mark ``todo_ids`` as done in today's plan, if they appear in it.
-
-    The daily status is a separate axis from the global lifecycle, but a global
-    completion is also a completion for the day, so we reflect it (only when a
-    plan for today exists).
-    """
-    today = date.today()
-    if not store.plan_exists(data_dir, today):
-        return
-    plan = store.load_day_plan(data_dir, today)
-    changed = False
-    for todo_id in todo_ids:
-        entry = plan.find(todo_id)
-        if entry is not None and entry.status is not PlanStatus.DONE:
-            entry.status = PlanStatus.DONE
-            changed = True
-    if changed:
-        store.save_day_plan(data_dir, plan)
 
 
 def _render_today(data_dir: Path) -> None:
@@ -293,13 +252,19 @@ def add(
             _err("Empty title, aborting.")
             raise typer.Exit(1)
 
-    todo = store.create_todo(data_dir, title=title)
-    if edit and todo.path is not None:
-        open_editor(todo.path)
+    if edit:
+        # The editor writes the body between creation and commit, so this path
+        # composes the primitives directly rather than the one-shot `capture`.
+        todo = store.create_todo(data_dir, title=title)
+        if todo.path is not None:
+            open_editor(todo.path)
+        sync = service.auto_sync(data_dir, cfg, f"add: {todo.title}")
+    else:
+        todo, sync = service.capture(data_dir, cfg, title)
 
     inbox = len(store.list_by_state(data_dir, TodoState.INBOX))
     _ok(f"Captured: {todo.title}  [inbox: {inbox}]")
-    auto_sync(data_dir, cfg, f"add: {todo.title}")
+    _emit_sync(sync)
 
 
 # --------------------------------------------------------------------------- #
@@ -409,7 +374,7 @@ def clarify():
     for line in done_lines:
         console.print(f"  [grey62]-[/grey62] {line}")
     _ok(f"{len(done_lines)} item(s) clarified.")
-    auto_sync(data_dir, cfg, f"clarify: {len(done_lines)} item(s)")
+    _emit_sync(service.auto_sync(data_dir, cfg, f"clarify: {len(done_lines)} item(s)"))
 
 
 # --------------------------------------------------------------------------- #
@@ -422,11 +387,9 @@ def clarify():
 def done():
     """Mark todos as completed (fzf multi-selection)."""
     data_dir, cfg, selected = _pick_active(multi=True)
-    for t in selected:
-        store.move_to_done(t, data_dir)
-    _reflect_done_in_today(data_dir, [t.id for t in selected])
+    sync = service.complete(data_dir, cfg, selected)
     _ok(f"{len(selected)} todo(s) completed.")
-    auto_sync(data_dir, cfg, f"done: {len(selected)} todo(s)")
+    _emit_sync(sync)
 
 
 @app.command("del")
@@ -436,10 +399,9 @@ def delete():
     data_dir, cfg, selected = _pick_active(multi=True)
     if not prompt.confirm(f"Permanently delete {len(selected)} todo(s)?"):
         raise prompt.Cancelled()
-    for t in selected:
-        store.delete_todo(t)
+    sync = service.delete(data_dir, cfg, selected)
     _ok(f"{len(selected)} todo(s) deleted.")
-    auto_sync(data_dir, cfg, f"del: {len(selected)} todo(s)")
+    _emit_sync(sync)
 
 
 @app.command()
@@ -450,7 +412,7 @@ def edit():
     todo = selected[0]
     open_editor(todo.require_path())
     _ok(f"Edited: {todo.title}")
-    auto_sync(data_dir, cfg, f"edit: {todo.title}")
+    _emit_sync(service.auto_sync(data_dir, cfg, f"edit: {todo.title}"))
 
 
 # --------------------------------------------------------------------------- #
@@ -505,7 +467,7 @@ def day():
     store.save_day_plan(data_dir, plan)
     render_history([plan])
     _ok(f"Today's plan: {len(plan.entries)} item(s).")
-    auto_sync(data_dir, cfg, f"day: plan {today.isoformat()}")
+    _emit_sync(service.auto_sync(data_dir, cfg, f"day: plan {today.isoformat()}"))
 
 
 @app.command()
@@ -530,7 +492,7 @@ def doing():
             entry.status = PlanStatus.DOING
     store.save_day_plan(data_dir, plan)
     _ok(f"{len(selected)} item(s) in progress.")
-    auto_sync(data_dir, cfg, f"doing: {len(selected)} item(s)")
+    _emit_sync(service.auto_sync(data_dir, cfg, f"doing: {len(selected)} item(s)"))
 
 
 @app.command()
@@ -667,39 +629,26 @@ app.add_typer(config_app, name="config")
 
 
 def _edit_vocabulary(kind: str, action: str, value: str) -> None:
-    """Add or remove one value from ``areas``/``contexts`` and sync.
-
-    Editing the vocabulary is a mutation like any other: the file is versioned
-    and shared across devices, so it commits and syncs rather than being
-    treated as a local preference.
-    """
+    """Render the outcome of a vocabulary edit; the rule lives in the service."""
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
-    values: list[str] = getattr(cfg, kind)
-
-    if action == "add":
-        if value in values:
-            _warn(f"{value!r} is already a known {kind[:-1]}.")
-            return
-        values.append(value)
-    else:
-        if value not in values:
-            _err(f"unknown {kind[:-1]}: {value!r}. Known: {', '.join(values)}")
-            raise typer.Exit(1)
-        # Removing a value still in use would silently orphan those todos.
-        field = "context" if kind == "contexts" else "area"
-        users = [t for t in store.list_active(data_dir) if getattr(t, field) == value]
-        if users:
-            _err(f"{len(users)} todo(s) still use {value!r}:")
-            for t in users[:5]:
-                console.print(f"  [grey62]-[/grey62] {t.title}")
-            _err("Reassign them first, or edit config.toml by hand.")
-            raise typer.Exit(1)
-        values.remove(value)
-
-    save_repo_config(data_dir, cfg)
+    try:
+        sync = service.set_vocabulary(data_dir, cfg, kind, action, value)
+    except service.DuplicateValue as exc:
+        # Adding a value already present is a no-op, not a failure.
+        _warn(str(exc))
+        return
+    except service.ValueInUse as exc:
+        _err(f"{exc}:")
+        for t in exc.users[:5]:
+            console.print(f"  [grey62]-[/grey62] {t.title}")
+        _err("Reassign them first, or edit config.toml by hand.")
+        raise typer.Exit(1) from None
+    except service.UnknownValue as exc:
+        _err(str(exc))
+        raise typer.Exit(1) from None
     _ok(f"{kind[:-1]} {action}: {value}")
-    auto_sync(data_dir, cfg, f"config: {action} {kind[:-1]} {value}")
+    _emit_sync(sync)
 
 
 @config_app.callback(invoke_without_command=True)
@@ -720,7 +669,7 @@ def config_edit():
     data_dir = require_data_dir()
     cfg = load_repo_config(data_dir)
     open_editor(data_dir / "config.toml")
-    auto_sync(data_dir, cfg, "config: edit")
+    _emit_sync(service.auto_sync(data_dir, cfg, "config: edit"))
 
 
 @config_app.command("context")
