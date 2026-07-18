@@ -297,14 +297,14 @@ Splitting first would only relocate that behind a distribution boundary, where
 it is harder to fix. The boundary should be discovered by the refactor, not
 imposed on it.
 
-1. **Freeze the model** (done) — this document.
+1. **Freeze the model** (done): this document.
 2. **Model + migration** (done), inside the current single package, with tests.
    The risky phase; done while the code was still one piece. The one-shot
    migration command has since been removed (see "Migration" above).
 3. **Extract the service layer** (done) out of `cli.py` into `service.py`.
-4. **Rename modules** (done) — mechanical moves, no behaviour change. Landed
+4. **Rename modules** (done): mechanical moves, no behaviour change. Landed
    alongside phase 2 rather than after phase 3.
-5. **Split the packages** — near-trivial once 1 to 4 are done.
+5. **Split the packages**: near-trivial once 1 to 4 are done.
 6. **The server.**
 
 `gitrepo.py` is ported, not rewritten. Its 605 lines encode create-or-validate,
