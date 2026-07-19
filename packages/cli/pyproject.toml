@@ -1,12 +1,12 @@
 [project]
 name = "neverland-cli"
-version = "0.5.0"
+version = "0.6.0"
 description = "Command-line interface for neverland (fzf/gum prompts, rich output)."
 readme = "README.md"
 authors = [{name = "walcark", email = "kevin.walcarius@cnes.fr"}]
 requires-python = ">=3.11"
 dependencies = [
-    "neverland-core==0.5.0",
+    "neverland-core==0.6.0",
     "typer>=0.12",
     "rich>=13",
 ]

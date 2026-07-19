@@ -1282,7 +1282,7 @@ packages:
 - pypi: packages/cli
   name: neverland-cli
   requires_dist:
-  - neverland-core==0.5.0
+  - neverland-core==0.6.0
   - typer>=0.12
   - rich>=13
   requires_python: '>=3.11'
@@ -1294,7 +1294,7 @@ packages:
 - pypi: packages/server
   name: neverland-server
   requires_dist:
-  - neverland-core==0.5.0
+  - neverland-core==0.6.0
   - fastapi>=0.110
   - uvicorn>=0.29
   requires_python: '>=3.11'

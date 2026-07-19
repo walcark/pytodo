@@ -57,7 +57,7 @@ def create_app(config: ServerConfig, static_dir: Path | None = None) -> FastAPI:
             if task is not None:
                 await task
 
-    app = FastAPI(title="neverland", version="0.5.0", lifespan=lifespan)
+    app = FastAPI(title="neverland", version="0.6.0", lifespan=lifespan)
     app.state.config = config
     app.include_router(api.router)
     _mount_web(app, static_dir or DEFAULT_STATIC_DIR)

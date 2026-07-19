@@ -1,6 +1,6 @@
 [project]
 name = "neverland-core"
-version = "0.5.0"
+version = "0.6.0"
 description = "GTD todo domain model, file storage and git sync (UI-agnostic core)."
 readme = "README.md"
 authors = [{name = "walcark", email = "kevin.walcarius@cnes.fr"}]

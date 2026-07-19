@@ -1,12 +1,12 @@
 [project]
 name = "neverland-server"
-version = "0.5.0"
+version = "0.6.0"
 description = "Self-hosted FastAPI server and web UI for neverland (frontend on the shared core)."
 readme = "README.md"
 authors = [{name = "walcark", email = "kevin.walcarius@cnes.fr"}]
 requires-python = ">=3.11"
 dependencies = [
-    "neverland-core==0.5.0",
+    "neverland-core==0.6.0",
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]
