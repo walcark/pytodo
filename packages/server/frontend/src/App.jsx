@@ -4,6 +4,7 @@ import {
   addToToday,
   completeTodo,
   deleteTodo,
+  getProjects,
   getToday,
   getTodos,
   getViews,
@@ -13,6 +14,7 @@ import {
 } from './api.js'
 import Clarify from './Clarify.jsx'
 import History from './History.jsx'
+import Projects from './Projects.jsx'
 import QuickAdd from './QuickAdd.jsx'
 import Review from './Review.jsx'
 import Sidebar from './Sidebar.jsx'
@@ -33,6 +35,7 @@ export default function App() {
   const [vocab, setVocab] = useState({ areas: [], contexts: [] })
   const [selection, setSelection] = useState(DEFAULT_SELECTION)
   const [todos, setTodos] = useState([])
+  const [projects, setProjects] = useState([])
   const [todayIds, setTodayIds] = useState(new Set())
   const [clarifying, setClarifying] = useState(false)
   const [error, setError] = useState(null)
@@ -41,25 +44,28 @@ export default function App() {
   const isToday = isView('today')
   const isHistory = isView('history')
   const isReview = isView('review')
+  const isProjects = isView('projects')
   // Views with their own component and their own loader.
-  const dedicated = isToday || isHistory || isReview
+  const dedicated = isToday || isHistory || isReview || isProjects
 
   const loadSidebar = useCallback(async () => {
-    const [v, vocabulary, plan] = await Promise.all([
+    const [v, vocabulary, plan, projectList] = await Promise.all([
       getViews(),
       getVocabulary(),
       getToday(),
+      getProjects(),
     ])
     setViews(v)
     setVocab(vocabulary)
     setTodayIds(new Set(plan.entries.map((e) => e.id)))
+    setProjects(projectList)
   }, [])
 
   const loadTodos = useCallback(async () => {
     // Today, History and Review render dedicated components that load themselves.
     if (
       selection.kind === 'view' &&
-      ['today', 'history', 'review'].includes(selection.value)
+      ['today', 'history', 'review', 'projects'].includes(selection.value)
     ) {
       setTodos([])
       return
@@ -153,6 +159,8 @@ export default function App() {
 
         {clarifying ? (
           <Clarify items={todos} vocab={vocab} onExit={exitClarify} />
+        ) : isProjects ? (
+          <Projects vocab={vocab} onChanged={refresh} />
         ) : isReview ? (
           <Review />
         ) : isHistory ? (
@@ -168,6 +176,7 @@ export default function App() {
             <TodoList
               todos={todos}
               vocab={vocab}
+              projects={projects}
               todayIds={todayIds}
               onComplete={onComplete}
               onDelete={onDelete}

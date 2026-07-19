@@ -96,6 +96,42 @@ class ProjectOut(BaseModel):
         )
 
 
+class ProjectIn(BaseModel):
+    """Payload to create a project: a title, optionally an outcome and area."""
+
+    title: str
+    outcome: str | None = None
+    area: str | None = None
+
+
+class ProjectSummaryOut(BaseModel):
+    """A project plus how many todos serve it (and whether it is stalled)."""
+
+    id: str
+    title: str
+    outcome: str | None = None
+    area: str | None = None
+    state: str
+    action_count: int
+    next_count: int
+    stalled: bool
+
+    @classmethod
+    def from_project(
+        cls, project: Project, *, actions: int, nexts: int
+    ) -> ProjectSummaryOut:
+        return cls(
+            id=project.id,
+            title=project.title,
+            outcome=project.outcome,
+            area=project.area,
+            state=project.state.value,
+            action_count=actions,
+            next_count=nexts,
+            stalled=nexts == 0,
+        )
+
+
 class PlanEntryOut(BaseModel):
     """One entry of the daily plan (todo id, title snapshot, per-day status)."""
 

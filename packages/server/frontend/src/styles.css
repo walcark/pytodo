@@ -306,6 +306,130 @@ body {
   margin-bottom: 6px;
 }
 
+/* Projects: a create bar, then expandable project cards. */
+.project-create {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.project-create input {
+  flex: 1;
+  min-width: 160px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.project-create select {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.project-create button {
+  padding: 9px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.project-create button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.project {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  padding: 4px 6px 8px;
+}
+
+.project-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 8px 8px;
+  cursor: pointer;
+  font-size: 15px;
+  text-align: left;
+}
+
+.project-caret {
+  color: var(--muted);
+  width: 12px;
+}
+
+.project-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.project-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.badge.stalled {
+  background: #fdecc8;
+  color: #8a6100;
+}
+
+.project-outcome {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 8px 6px 30px;
+}
+
+.project-todos {
+  list-style: none;
+  margin: 4px 8px 4px 30px;
+  padding: 0;
+}
+
+.project-todos li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.project-todos .muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* Row actions: complete on the left, delete on the right. */
 .todo.busy {
   opacity: 0.5;

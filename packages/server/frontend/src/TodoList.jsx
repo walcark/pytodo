@@ -8,6 +8,7 @@ import TodoEditor from './TodoEditor.jsx'
 function TodoRow({
   todo,
   vocab,
+  projects,
   inToday,
   focused,
   editing,
@@ -47,6 +48,7 @@ function TodoRow({
         <TodoEditor
           todo={todo}
           vocab={vocab}
+          projects={projects}
           busy={busy}
           onSave={save}
           onCancel={onCancelEdit}
@@ -114,6 +116,7 @@ function TodoRow({
 export default function TodoList({
   todos,
   vocab,
+  projects,
   todayIds,
   onComplete,
   onDelete,
@@ -157,6 +160,7 @@ export default function TodoList({
             key={todo.id}
             todo={todo}
             vocab={vocab}
+            projects={projects}
             inToday={todayIds.has(todo.id)}
             focused={i === focused && editingId === null}
             editing={editingId === todo.id}

@@ -23,6 +23,7 @@ from pathlib import Path
 
 from . import store, vcs
 from .plan import PlanEntry, PlanStatus
+from .project import Project
 from .todo import Todo
 from .vocabulary import RepoConfig, save_repo_config
 
@@ -140,6 +141,28 @@ def update(data_dir: Path, cfg: RepoConfig, todo: Todo) -> vcs.SyncResult:
     """
     store.save_todo(todo)
     return auto_sync(data_dir, cfg, f"edit: {todo.title}")
+
+
+# --------------------------------------------------------------------------- #
+# Projects                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+def add_project(
+    data_dir: Path,
+    cfg: RepoConfig,
+    *,
+    title: str,
+    outcome: str | None = None,
+    area: str | None = None,
+) -> tuple[Project, vcs.SyncResult]:
+    """Create a project (born active) and sync.
+
+    Returns the created project so the caller can report it without a second
+    read, mirroring :func:`capture`.
+    """
+    project = store.create_project(data_dir, title=title, outcome=outcome, area=area)
+    return project, auto_sync(data_dir, cfg, f"project: add {project.title}")
 
 
 # --------------------------------------------------------------------------- #

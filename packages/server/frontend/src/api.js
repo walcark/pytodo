@@ -109,3 +109,16 @@ export const getDone = () => request('/api/done')
 
 // The weekly-review report (inbox, stalled projects, contextless next, stale waiting).
 export const getReview = () => request('/api/review')
+
+// Projects (active ones, with action counts) and their serving todos.
+export const getProjects = () => request('/api/projects')
+
+export const getProjectTodos = (id) => request(`/api/projects/${id}/todos`)
+
+export function createProject(fields) {
+  return request('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+}

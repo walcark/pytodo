@@ -34,7 +34,9 @@ from .schemas import (
     DayPlanOut,
     NamedCount,
     PlanStatusIn,
+    ProjectIn,
     ProjectOut,
+    ProjectSummaryOut,
     ReviewOut,
     TodoOut,
     TodoPatch,
@@ -392,3 +394,62 @@ def read_review(cfg: ServerConfig = Depends(get_config)) -> ReviewOut:
         stale_waiting=[TodoOut.from_todo(t) for t in stale],
         waiting_stale_days=repo.waiting_stale_days,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Projects                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/projects", response_model=list[ProjectSummaryOut])
+def read_projects(cfg: ServerConfig = Depends(get_config)) -> list[ProjectSummaryOut]:
+    """Return the active projects, each with its action and next-action counts."""
+    active = store.list_active(cfg.data_dir)
+    actions: dict[str, int] = {}
+    nexts: dict[str, int] = {}
+    for todo in active:
+        if todo.project:
+            actions[todo.project] = actions.get(todo.project, 0) + 1
+            if todo.state is TodoState.NEXT:
+                nexts[todo.project] = nexts.get(todo.project, 0) + 1
+    return [
+        ProjectSummaryOut.from_project(
+            p, actions=actions.get(p.id, 0), nexts=nexts.get(p.id, 0)
+        )
+        for p in store.list_active_projects(cfg.data_dir)
+    ]
+
+
+@router.post("/projects", response_model=ProjectOut, status_code=201)
+def create_project(
+    payload: ProjectIn,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> ProjectOut:
+    """Create a project (born active) and sync."""
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    repo = _repo_for_write(cfg)
+    if payload.area is not None and payload.area not in repo.areas:
+        raise HTTPException(status_code=400, detail=f"unknown area: {payload.area!r}")
+    project, _ = service.add_project(
+        cfg.data_dir, repo, title=title, outcome=payload.outcome, area=payload.area
+    )
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return ProjectOut.from_project(project)
+
+
+@router.get("/projects/{project_id}/todos", response_model=list[TodoOut])
+def read_project_todos(
+    project_id: str, cfg: ServerConfig = Depends(get_config)
+) -> list[TodoOut]:
+    """Return the active todos serving a project, oldest first."""
+    known = {p.id for p in store.list_projects(cfg.data_dir)}
+    if project_id not in known:
+        raise HTTPException(status_code=404, detail=f"unknown project: {project_id}")
+    todos = sorted(
+        (t for t in store.list_active(cfg.data_dir) if t.project == project_id),
+        key=sort_key,
+    )
+    return [TodoOut.from_todo(t) for t in todos]

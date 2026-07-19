@@ -5,11 +5,12 @@ import { useState } from 'react'
 // (that is the row's ✓ action), so the states are the four active ones.
 const STATES = ['inbox', 'next', 'waiting', 'someday']
 
-export default function TodoEditor({ todo, vocab, busy, onSave, onCancel }) {
+export default function TodoEditor({ todo, vocab, projects, busy, onSave, onCancel }) {
   const [title, setTitle] = useState(todo.title)
   const [state, setState] = useState(todo.state)
   const [context, setContext] = useState(todo.context || '')
   const [area, setArea] = useState(todo.area || '')
+  const [project, setProject] = useState(todo.project || '')
   const [waitingOn, setWaitingOn] = useState(todo.waiting_on || '')
 
   function save() {
@@ -18,6 +19,7 @@ export default function TodoEditor({ todo, vocab, busy, onSave, onCancel }) {
       state,
       context: context || null,
       area: area || null,
+      project: project || null,
       waiting_on: state === 'waiting' ? waitingOn.trim() || null : null,
     })
   }
@@ -59,6 +61,17 @@ export default function TodoEditor({ todo, vocab, busy, onSave, onCancel }) {
             {vocab.areas.map((a) => (
               <option key={a} value={a}>
                 {a}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Project
+          <select value={project} onChange={(e) => setProject(e.target.value)}>
+            <option value="">(none)</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title}
               </option>
             ))}
           </select>
