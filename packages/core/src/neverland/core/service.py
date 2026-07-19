@@ -105,14 +105,24 @@ def auto_sync(data_dir: Path, cfg: RepoConfig, message: str) -> vcs.SyncResult:
 # --------------------------------------------------------------------------- #
 
 
-def capture(data_dir: Path, cfg: RepoConfig, title: str) -> tuple[Todo, vcs.SyncResult]:
+def capture(
+    data_dir: Path,
+    cfg: RepoConfig,
+    title: str,
+    *,
+    project: str | None = None,
+) -> tuple[Todo, vcs.SyncResult]:
     """Capture a todo into the inbox and sync.
 
     The GTD capture step: no clarification, straight to the inbox. Returns the
     created todo so the caller can report it (and its inbox count) without a
     second read.
+
+    ``project`` may pre-link the captured item to a project while leaving
+    everything else to ``clarify``: you already know the outcome it belongs to,
+    but not yet the action or its context.
     """
-    todo = store.create_todo(data_dir, title=title)
+    todo = store.create_todo(data_dir, title=title, project=project)
     return todo, auto_sync(data_dir, cfg, f"add: {todo.title}")
 
 

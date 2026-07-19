@@ -16,11 +16,12 @@ const DISPOSITIONS = [
 
 // The form for the current item. Keyed by todo id in the parent, so it
 // remounts (fresh defaults) whenever we advance to the next item.
-function ClarifyItem({ todo, vocab, busy, onApply }) {
+function ClarifyItem({ todo, vocab, projects, busy, onApply }) {
   const [disposition, setDisposition] = useState('next')
   const [title, setTitle] = useState(todo.title)
   const [context, setContext] = useState('')
   const [area, setArea] = useState('')
+  const [project, setProject] = useState(todo.project || '')
   const [waitingOn, setWaitingOn] = useState('')
 
   function apply() {
@@ -33,6 +34,7 @@ function ClarifyItem({ todo, vocab, busy, onApply }) {
       title: title.trim() || todo.title,
       state: disposition,
       area: area || null,
+      project: project || null,
       context: disposition === 'next' ? context || null : null,
       waiting_on: disposition === 'waiting' ? waitingOn.trim() || null : null,
     }
@@ -101,6 +103,18 @@ function ClarifyItem({ todo, vocab, busy, onApply }) {
               ))}
             </select>
           </label>
+
+          <label>
+            Project
+            <select value={project} onChange={(e) => setProject(e.target.value)}>
+              <option value="">(none)</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       )}
 
@@ -118,7 +132,7 @@ function ClarifyItem({ todo, vocab, busy, onApply }) {
   )
 }
 
-export default function Clarify({ items, vocab, onExit }) {
+export default function Clarify({ items, vocab, projects, onExit }) {
   // Snapshot the inbox: the list must not shift under us as we mutate items.
   const [queue] = useState(items)
   const [index, setIndex] = useState(0)
@@ -167,6 +181,7 @@ export default function Clarify({ items, vocab, onExit }) {
         key={todo.id}
         todo={todo}
         vocab={vocab}
+        projects={projects}
         busy={busy}
         onApply={apply}
       />

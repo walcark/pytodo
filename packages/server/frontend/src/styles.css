@@ -430,6 +430,37 @@ body {
   font-size: 13px;
 }
 
+.project-capture {
+  display: flex;
+  gap: 8px;
+  margin: 6px 8px 4px 30px;
+}
+
+.project-capture input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.project-capture button {
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.project-capture button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Row actions: complete on the left, delete on the right. */
 .todo.busy {
   opacity: 0.5;

@@ -453,3 +453,28 @@ def read_project_todos(
         key=sort_key,
     )
     return [TodoOut.from_todo(t) for t in todos]
+
+
+@router.post("/projects/{project_id}/todos", response_model=TodoOut, status_code=201)
+def capture_into_project(
+    project_id: str,
+    payload: CaptureIn,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> TodoOut:
+    """Capture a todo straight into the inbox, pre-linked to a project.
+
+    A capture, not a clarified action: it lands in the inbox (no context, no
+    state decision) but already knows its project, so ``clarify`` only has the
+    action and context left to decide.
+    """
+    known = {p.id for p in store.list_projects(cfg.data_dir)}
+    if project_id not in known:
+        raise HTTPException(status_code=404, detail=f"unknown project: {project_id}")
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    repo = _repo_for_write(cfg)
+    todo, _ = service.capture(cfg.data_dir, repo, title, project=project_id)
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return TodoOut.from_todo(todo)

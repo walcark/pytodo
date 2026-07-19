@@ -69,6 +69,30 @@ def test_project_todos_unknown_is_404(client):
     assert client.get("/api/projects/nope/todos").status_code == 404
 
 
+def test_capture_into_project_lands_in_inbox_prelinked(client):
+    pid = _create_project(client)
+    resp = client.post(f"/api/projects/{pid}/todos", json={"title": "Photos"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert (body["state"], body["project"]) == ("inbox", pid)
+
+    # it counts as an action, but leaves the project stalled (no next action yet)
+    summary = next(p for p in client.get("/api/projects").json() if p["id"] == pid)
+    assert (summary["action_count"], summary["next_count"]) == (1, 0)
+    assert summary["stalled"] is True
+
+
+def test_capture_into_project_validation(client):
+    pid = _create_project(client)
+    assert (
+        client.post(f"/api/projects/{pid}/todos", json={"title": " "}).status_code
+        == 400
+    )
+    assert (
+        client.post("/api/projects/nope/todos", json={"title": "X"}).status_code == 404
+    )
+
+
 def test_create_project_makes_a_git_commit(client, tmp_path):
     _create_project(client, title="Tracked project")
     log = subprocess.run(

@@ -158,7 +158,12 @@ export default function App() {
         {error && <p className="error">{error}</p>}
 
         {clarifying ? (
-          <Clarify items={todos} vocab={vocab} onExit={exitClarify} />
+          <Clarify
+            items={todos}
+            vocab={vocab}
+            projects={projects}
+            onExit={exitClarify}
+          />
         ) : isProjects ? (
           <Projects vocab={vocab} onChanged={refresh} />
         ) : isReview ? (

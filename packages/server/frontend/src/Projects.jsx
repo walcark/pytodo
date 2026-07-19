@@ -1,18 +1,42 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { createProject, getProjects, getProjectTodos } from './api.js'
+import {
+  captureIntoProject,
+  createProject,
+  getProjects,
+  getProjectTodos,
+} from './api.js'
 
-// One project row: its counts, a stalled badge, and a lazy-loaded list of the
-// todos that serve it (expanded on click).
-function ProjectRow({ project }) {
+// One project row: its counts, a stalled badge, its serving todos (lazy-loaded
+// on expand), and a capture bar to drop new todos straight into the project.
+function ProjectRow({ project, onCaptured }) {
   const [open, setOpen] = useState(false)
   const [todos, setTodos] = useState(null)
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const loadTodos = useCallback(async () => {
+    setTodos(await getProjectTodos(project.id))
+  }, [project.id])
 
   async function toggle() {
     const next = !open
     setOpen(next)
-    if (next && todos === null) {
-      setTodos(await getProjectTodos(project.id))
+    if (next && todos === null) await loadTodos()
+  }
+
+  async function capture(event) {
+    event.preventDefault()
+    const text = title.trim()
+    if (!text || busy) return
+    setBusy(true)
+    try {
+      await captureIntoProject(project.id, text)
+      setTitle('')
+      await loadTodos()
+      onCaptured() // refresh the counts (and the app-wide project list)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -31,21 +55,35 @@ function ProjectRow({ project }) {
       </button>
       {project.outcome && <p className="project-outcome">{project.outcome}</p>}
       {open && (
-        <ul className="project-todos">
-          {todos === null ? (
-            <li className="muted">Loading…</li>
-          ) : todos.length === 0 ? (
-            <li className="muted">No actions yet. Add one and assign it here.</li>
-          ) : (
-            todos.map((t) => (
-              <li key={t.id}>
-                <span className={`pill state-${t.state}`}>{t.state}</span>
-                <span className="todo-title">{t.title}</span>
-                {t.context && <span className="tag context">{t.context}</span>}
-              </li>
-            ))
-          )}
-        </ul>
+        <div className="project-body">
+          <ul className="project-todos">
+            {todos === null ? (
+              <li className="muted">Loading…</li>
+            ) : todos.length === 0 ? (
+              <li className="muted">No actions yet.</li>
+            ) : (
+              todos.map((t) => (
+                <li key={t.id}>
+                  <span className={`pill state-${t.state}`}>{t.state}</span>
+                  <span className="todo-title">{t.title}</span>
+                  {t.context && <span className="tag context">{t.context}</span>}
+                </li>
+              ))
+            )}
+          </ul>
+          <form className="project-capture" onSubmit={capture}>
+            <input
+              type="text"
+              placeholder="Capture into this project…"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              aria-label={`Capture into ${project.title}`}
+            />
+            <button type="submit" disabled={busy || !title.trim()}>
+              Capture
+            </button>
+          </form>
+        </div>
       )}
     </li>
   )
@@ -108,8 +146,8 @@ function CreateProject({ vocab, onCreated }) {
   )
 }
 
-// The projects view: create outcomes and see, for each, whether it is moving
-// (has a next action) and the todos that serve it.
+// The projects view: create outcomes, capture actions into them, and see for
+// each whether it is moving (has a next action) and the todos that serve it.
 export default function Projects({ vocab, onChanged }) {
   const [projects, setProjects] = useState([])
   const [error, setError] = useState(null)
@@ -122,21 +160,22 @@ export default function Projects({ vocab, onChanged }) {
     load().catch((e) => setError(String(e)))
   }, [load])
 
-  const onCreated = () => {
+  // Reload the summaries locally and let the app refresh the shared list too.
+  const onChangedHere = () => {
     load().catch((e) => setError(String(e)))
     onChanged()
   }
 
   return (
     <div className="projects">
-      <CreateProject vocab={vocab} onCreated={onCreated} />
+      <CreateProject vocab={vocab} onCreated={onChangedHere} />
       {error && <p className="error">{error}</p>}
       {projects.length === 0 ? (
         <p className="empty">No active projects yet.</p>
       ) : (
         <ul className="project-list">
           {projects.map((p) => (
-            <ProjectRow key={p.id} project={p} />
+            <ProjectRow key={p.id} project={p} onCaptured={onChangedHere} />
           ))}
         </ul>
       )}

@@ -115,6 +115,15 @@ export const getProjects = () => request('/api/projects')
 
 export const getProjectTodos = (id) => request(`/api/projects/${id}/todos`)
 
+// Capture into the inbox, pre-linked to a project (clarify decides the rest).
+export function captureIntoProject(id, title) {
+  return request(`/api/projects/${id}/todos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+}
+
 export function createProject(fields) {
   return request('/api/projects', {
     method: 'POST',
