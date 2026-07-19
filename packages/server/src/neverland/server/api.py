@@ -12,7 +12,7 @@ background flush is scheduled), which keeps the CLI and the server identical.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import (
     APIRouter,
@@ -25,7 +25,7 @@ from fastapi import (
 
 from neverland.core import service, store, vcs
 from neverland.core.plan import PlanStatus
-from neverland.core.todo import Todo, TodoState
+from neverland.core.todo import Todo, TodoState, sort_key
 from neverland.core.vocabulary import RepoConfig, load_repo_config
 
 from .config import ServerConfig
@@ -34,6 +34,8 @@ from .schemas import (
     DayPlanOut,
     NamedCount,
     PlanStatusIn,
+    ProjectOut,
+    ReviewOut,
     TodoOut,
     TodoPatch,
     ViewsOut,
@@ -351,3 +353,42 @@ def read_done(cfg: ServerConfig = Depends(get_config)) -> list[TodoOut]:
     done = store.list_done(cfg.data_dir)
     done.sort(key=lambda t: t.completed or datetime.min, reverse=True)
     return [TodoOut.from_todo(t) for t in done]
+
+
+# --------------------------------------------------------------------------- #
+# Review (the four things GTD says rot silently)                               #
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/review", response_model=ReviewOut)
+def read_review(cfg: ServerConfig = Depends(get_config)) -> ReviewOut:
+    """Report a filling inbox, stalled projects, contextless next actions and
+    stale ``waiting`` items, mirroring ``todo review``."""
+    repo = load_repo_config(cfg.data_dir)
+    active = store.list_active(cfg.data_dir)
+
+    inbox = sorted((t for t in active if t.state is TodoState.INBOX), key=sort_key)
+    contextless = sorted(
+        (t for t in active if t.state is TodoState.NEXT and not t.context),
+        key=sort_key,
+    )
+    cutoff = datetime.now() - timedelta(days=repo.waiting_stale_days)
+    stale = sorted(
+        (
+            t
+            for t in active
+            if t.state is TodoState.WAITING
+            and t.created is not None
+            and t.created < cutoff
+        ),
+        key=sort_key,
+    )
+    return ReviewOut(
+        inbox=[TodoOut.from_todo(t) for t in inbox],
+        stalled_projects=[
+            ProjectOut.from_project(p) for p in store.stalled_projects(cfg.data_dir)
+        ],
+        contextless_next=[TodoOut.from_todo(t) for t in contextless],
+        stale_waiting=[TodoOut.from_todo(t) for t in stale],
+        waiting_stale_days=repo.waiting_stale_days,
+    )

@@ -122,6 +122,20 @@ class DayPlanOut(BaseModel):
         )
 
 
+class ReviewOut(BaseModel):
+    """The weekly-review report: the four things GTD says rot silently.
+
+    A filling inbox, a project nothing advances, a next action with no context
+    (so it is unselectable), and someone you forgot you were waiting on.
+    """
+
+    inbox: list[TodoOut]
+    stalled_projects: list[ProjectOut]
+    contextless_next: list[TodoOut]
+    stale_waiting: list[TodoOut]
+    waiting_stale_days: int
+
+
 class NamedCount(BaseModel):
     """A sidebar label and how many todos fall under it."""
 

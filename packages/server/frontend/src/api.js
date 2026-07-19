@@ -106,3 +106,6 @@ export function setTodayStatus(id, status) {
 
 // The archive of completed todos, most recently completed first.
 export const getDone = () => request('/api/done')
+
+// The weekly-review report (inbox, stalled projects, contextless next, stale waiting).
+export const getReview = () => request('/api/review')

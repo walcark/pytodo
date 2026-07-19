@@ -14,6 +14,7 @@ import {
 import Clarify from './Clarify.jsx'
 import History from './History.jsx'
 import QuickAdd from './QuickAdd.jsx'
+import Review from './Review.jsx'
 import Sidebar from './Sidebar.jsx'
 import Today from './Today.jsx'
 import TodoList from './TodoList.jsx'
@@ -39,7 +40,9 @@ export default function App() {
   const isView = (value) => selection.kind === 'view' && selection.value === value
   const isToday = isView('today')
   const isHistory = isView('history')
-  const dedicated = isToday || isHistory // views with their own component + loader
+  const isReview = isView('review')
+  // Views with their own component and their own loader.
+  const dedicated = isToday || isHistory || isReview
 
   const loadSidebar = useCallback(async () => {
     const [v, vocabulary, plan] = await Promise.all([
@@ -53,8 +56,11 @@ export default function App() {
   }, [])
 
   const loadTodos = useCallback(async () => {
-    // Today and History render dedicated components that load themselves.
-    if (selection.kind === 'view' && (selection.value === 'today' || selection.value === 'history')) {
+    // Today, History and Review render dedicated components that load themselves.
+    if (
+      selection.kind === 'view' &&
+      ['today', 'history', 'review'].includes(selection.value)
+    ) {
       setTodos([])
       return
     }
@@ -147,6 +153,8 @@ export default function App() {
 
         {clarifying ? (
           <Clarify items={todos} vocab={vocab} onExit={exitClarify} />
+        ) : isReview ? (
+          <Review />
         ) : isHistory ? (
           <History />
         ) : isToday ? (
