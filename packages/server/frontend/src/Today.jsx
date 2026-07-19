@@ -53,6 +53,7 @@ export default function Today({ onChanged }) {
         return (
           <li key={entry.id} className={`todo${done ? ' done' : ''}`}>
             <span className={`pill plan-${entry.status}`}>{entry.status}</span>
+            {todo?.routine && <span className="routine-badge" title="Recurring">⟳</span>}
             <span className="todo-title">{entry.title}</span>
             <span className="todo-tags">
               {todo?.context && <span className="tag context">{todo.context}</span>}

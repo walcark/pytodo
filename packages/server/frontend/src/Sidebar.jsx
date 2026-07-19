@@ -3,6 +3,7 @@ const FIXED_VIEWS = [
   { value: 'today', label: 'Today', icon: '☀️' },
   { value: 'all', label: 'All', icon: '\u{1F5C2}️' },
   { value: 'projects', label: 'Projects', icon: '\u{1F5C3}️' },
+  { value: 'routines', label: 'Routines', icon: '⟳' },
   { value: 'review', label: 'Review', icon: '\u{1FA79}' },
   { value: 'history', label: 'History', icon: '\u{1F4D3}' },
 ]

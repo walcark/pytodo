@@ -73,6 +73,7 @@ function TodoRow({
         ✓
       </button>
       <span className={`pill state-${todo.state}`}>{todo.state}</span>
+      {todo.routine && <span className="routine-badge" title="Recurring">⟳</span>}
       <span className="todo-title">{todo.title}</span>
       <span className="todo-tags">
         {todo.context && <span className="tag context">{todo.context}</span>}

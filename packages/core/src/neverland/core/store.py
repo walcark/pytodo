@@ -17,12 +17,14 @@ from pathlib import Path
 
 from .plan import DayPlan, parse_plan
 from .project import Project, ProjectState, load_project
+from .routine import Routine, load_routine
 from .todo import Todo, TodoState, load_todo
 
 TODOS_DIRNAME = "todos"
 DONE_DIRNAME = "done"
 PLANS_DIRNAME = "plans"
 PROJECTS_DIRNAME = "projects"
+ROUTINES_DIRNAME = "routines"
 
 
 def todos_dir(data_dir: Path) -> Path:
@@ -117,6 +119,7 @@ def create_todo(
     context: str | None = None,
     area: str | None = None,
     project: str | None = None,
+    routine: str | None = None,
     now: datetime | None = None,
 ) -> Todo:
     """Create a new todo file.
@@ -159,6 +162,7 @@ def create_todo(
         context=context,
         area=area,
         project=project,
+        routine=routine,
         created=now.replace(microsecond=0),
         path=path,
     )
@@ -361,6 +365,79 @@ def stalled_projects(data_dir: Path) -> list[Project]:
         if todo.state is TodoState.NEXT and todo.project
     }
     return [p for p in list_active_projects(data_dir) if p.id not in advancing]
+
+
+# --------------------------------------------------------------------------- #
+# Routines                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+def routines_dir(data_dir: Path) -> Path:
+    """Return the ``routines/`` directory for a data repo."""
+    return data_dir / ROUTINES_DIRNAME
+
+
+def list_routines(data_dir: Path) -> list[Routine]:
+    """Return every routine, whatever its ``active`` flag."""
+    directory = routines_dir(data_dir)
+    if not directory.exists():
+        return []
+    return [load_routine(path) for path in sorted(directory.glob("*.md"))]
+
+
+def find_routine(data_dir: Path, routine_id: str) -> Routine | None:
+    """Return the routine with ``routine_id``, or ``None`` if absent."""
+    path = routines_dir(data_dir) / f"{routine_id}.md"
+    return load_routine(path) if path.exists() else None
+
+
+def create_routine(
+    data_dir: Path,
+    *,
+    routine: Routine,
+    now: datetime | None = None,
+) -> Routine:
+    """Write a new routine file, assigning it a fresh id and path.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    routine : Routine
+        The routine to persist; its ``id`` and ``path`` are set here.
+    now : datetime.datetime, optional
+        Creation time (for the id), defaults to now.
+
+    Returns
+    -------
+    Routine
+        The stored routine, with ``id`` and ``path`` set.
+    """
+    now = now or datetime.now()
+    routine.id = new_id(now)
+    directory = routines_dir(data_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    routine.path = directory / f"{routine.id}.md"
+    routine.path.write_text(routine.to_markdown(), encoding="utf-8")
+    return routine
+
+
+def save_routine(routine: Routine) -> Path:
+    """Write a routine back to its existing file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    """
+    path = routine.require_path()
+    path.write_text(routine.to_markdown(), encoding="utf-8")
+    return path
+
+
+def delete_routine(routine: Routine) -> None:
+    """Permanently delete a routine file (its past occurrences are untouched)."""
+    routine.require_path().unlink()
 
 
 # --------------------------------------------------------------------------- #

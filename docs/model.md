@@ -284,12 +284,36 @@ list back into the inbox.
   selection actually proves hard in practice.
 - **Deadlines / a calendar.** Removing `deadline` was already GTD-correct: GTD
   puts date-specific commitments on the calendar and nowhere else. If a hard
-  date appears, it belongs in a real calendar, not here.
+  date appears, it belongs in a real calendar, not here. Note the distinction
+  from routines (below): a routine's date is a *tickler* ("when should this come
+  back"), not a deadline ("when is it due to the outside world"), which is why
+  one is accepted and the other is not.
 - **Reference material.** GTD's "not actionable" branch classically has a third
   outcome besides trash and someday: *reference*, information you will never do
   and only ever look up. neverland does not store it and `todo clarify` does not
   offer the branch, so "not actionable" is just trash or someday. A todo tool
   that grows into a notes tool ends up mediocre at both.
+
+## Routines (recurring todos)
+
+A routine is a *generator*, not a special todo: it holds a recurrence rule and a
+single `next_due` date, and when that date arrives it materializes an ordinary
+`next` todo (carrying `routine: <id>`) that then lives and dies like any other.
+The reference is one-way, so deleting the routine never dangles, and history is
+just the pile of completed occurrences in `done/`.
+
+Four shapes cover the real cases: `days` (a fixed cadence, "every 3 days"),
+`weekly` (given weekdays), `monthly` (a day of the month) and `yearly` (a month
+and day). An optional `lead` makes it appear a few days early ("buy the gift 5
+days before"). The scheduling is completion-driven: `next_due` advances only when
+the current occurrence is resolved (completed or deleted), so a long absence
+never backfills a pile of missed occurrences, and only one occurrence is open at
+a time.
+
+This is deliberately a **tickler**, not a deadline (see the non-goal above): the
+date says when the action should resurface, never a hard external due date, and
+nothing is ranked by it. `days` is anchored to the schedule (the gap is between
+due dates), while `weekly`/`monthly`/`yearly` are plain calendar rules.
 
 ## The restructuring plan
 

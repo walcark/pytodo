@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from neverland.core.plan import DayPlan, PlanEntry
 from neverland.core.project import Project
+from neverland.core.routine import Routine
 from neverland.core.todo import Todo
 
 
@@ -53,6 +54,7 @@ class TodoOut(BaseModel):
     context: str | None = None
     area: str | None = None
     project: str | None = None
+    routine: str | None = None
     waiting_on: str | None = None
     created: datetime | None = None
     completed: datetime | None = None
@@ -66,6 +68,7 @@ class TodoOut(BaseModel):
             context=todo.context,
             area=todo.area,
             project=todo.project,
+            routine=todo.routine,
             waiting_on=todo.waiting_on,
             created=todo.created,
             completed=todo.completed,
@@ -129,6 +132,55 @@ class ProjectSummaryOut(BaseModel):
             action_count=actions,
             next_count=nexts,
             stalled=nexts == 0,
+        )
+
+
+class RoutineIn(BaseModel):
+    """Payload to create a routine: a title and the recurrence rule fields.
+
+    Only the fields the chosen ``freq`` needs are read (``interval`` for days,
+    ``weekdays`` for weekly, ``monthday`` for monthly, ``month``/``day`` for
+    yearly); the server builds and validates the rule from them.
+    """
+
+    title: str
+    freq: str
+    interval: int | None = None
+    weekdays: list[str] | None = None
+    monthday: int | None = None
+    month: int | None = None
+    day: int | None = None
+    context: str | None = None
+    area: str | None = None
+    project: str | None = None
+    lead: int = 0
+
+
+class RoutineOut(BaseModel):
+    """A routine as sent to the client, with a human-readable rule."""
+
+    id: str
+    title: str
+    rule: str
+    next_due: str | None = None
+    lead: int
+    active: bool
+    context: str | None = None
+    area: str | None = None
+    project: str | None = None
+
+    @classmethod
+    def from_routine(cls, routine: Routine) -> RoutineOut:
+        return cls(
+            id=routine.id,
+            title=routine.title,
+            rule=routine.recurrence.describe(),
+            next_due=routine.next_due.isoformat() if routine.next_due else None,
+            lead=routine.lead,
+            active=routine.active,
+            context=routine.context,
+            area=routine.area,
+            project=routine.project,
         )
 
 

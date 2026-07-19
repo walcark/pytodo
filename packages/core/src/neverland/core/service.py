@@ -24,7 +24,8 @@ from pathlib import Path
 from . import store, vcs
 from .plan import PlanEntry, PlanStatus
 from .project import Project
-from .todo import Todo
+from .routine import Routine
+from .todo import Todo, TodoState
 from .vocabulary import RepoConfig, save_repo_config
 
 # --------------------------------------------------------------------------- #
@@ -131,6 +132,7 @@ def complete(data_dir: Path, cfg: RepoConfig, todos: list[Todo]) -> vcs.SyncResu
     for todo in todos:
         store.move_to_done(todo, data_dir)
     reflect_done_in_today(data_dir, [t.id for t in todos])
+    _advance_routines(data_dir, todos)
     return auto_sync(data_dir, cfg, f"done: {len(todos)} todo(s)")
 
 
@@ -138,7 +140,28 @@ def delete(data_dir: Path, cfg: RepoConfig, todos: list[Todo]) -> vcs.SyncResult
     """Permanently delete ``todos`` and sync."""
     for todo in todos:
         store.delete_todo(todo)
+    _advance_routines(data_dir, todos)
     return auto_sync(data_dir, cfg, f"del: {len(todos)} todo(s)")
+
+
+def _advance_routines(data_dir: Path, todos: list[Todo]) -> None:
+    """Move the routine of every resolved occurrence to its next due date.
+
+    Resolving an occurrence (completing or deleting it) is what schedules the
+    following one: the routine advances past today, so the next materialization
+    spawns it on its next due date and nothing backfills in between.
+    """
+    today = date.today()
+    seen: set[str] = set()
+    for todo in todos:
+        rid = todo.routine
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        routine = store.find_routine(data_dir, rid)
+        if routine is not None:
+            routine.advance(today)
+            store.save_routine(routine)
 
 
 def update(data_dir: Path, cfg: RepoConfig, todo: Todo) -> vcs.SyncResult:
@@ -173,6 +196,67 @@ def add_project(
     """
     project = store.create_project(data_dir, title=title, outcome=outcome, area=area)
     return project, auto_sync(data_dir, cfg, f"project: add {project.title}")
+
+
+# --------------------------------------------------------------------------- #
+# Routines                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+def add_routine(
+    data_dir: Path, cfg: RepoConfig, routine: Routine
+) -> tuple[Routine, vcs.SyncResult]:
+    """Create a routine (seeding its first due date) and sync."""
+    if routine.next_due is None:
+        routine.next_due = routine.recurrence.first_on_or_after(date.today())
+    store.create_routine(data_dir, routine=routine)
+    return routine, auto_sync(data_dir, cfg, f"routine: add {routine.title}")
+
+
+def remove_routine(data_dir: Path, cfg: RepoConfig, routine: Routine) -> vcs.SyncResult:
+    """Delete a routine and sync (its already-spawned occurrences are kept)."""
+    store.delete_routine(routine)
+    return auto_sync(data_dir, cfg, f"routine: remove {routine.title}")
+
+
+def materialize_routines(
+    data_dir: Path, cfg: RepoConfig, today: date | None = None
+) -> list[Todo]:
+    """Spawn the due routines as todos and add them to today's plan, then sync.
+
+    Idempotent and safe to run on a timer: a routine spawns nothing while its
+    previous occurrence is still open (one at a time, no pile-up), and only when
+    ``next_due - lead`` has been reached. ``next_due`` itself is advanced when
+    the occurrence is resolved, not here.
+    """
+    today = today or date.today()
+    open_routines = {t.routine for t in store.list_active(data_dir) if t.routine}
+    spawned: list[Todo] = []
+    plan = None
+    for routine in store.list_routines(data_dir):
+        if not routine.due_on(today) or routine.id in open_routines:
+            continue
+        todo = store.create_todo(
+            data_dir,
+            title=routine.title,
+            state=TodoState.NEXT,
+            context=routine.context,
+            area=routine.area,
+            project=routine.project,
+            routine=routine.id,
+        )
+        spawned.append(todo)
+        if plan is None:
+            plan = store.load_day_plan(data_dir, today)
+        if not plan.has(todo.id):
+            plan.entries.append(PlanEntry(todo_id=todo.id, title=todo.title))
+
+    if not spawned:
+        return []
+    assert plan is not None  # set whenever an occurrence was spawned
+    store.save_day_plan(data_dir, plan)
+    auto_sync(data_dir, cfg, f"routine: materialize {len(spawned)} occurrence(s)")
+    return spawned
 
 
 # --------------------------------------------------------------------------- #

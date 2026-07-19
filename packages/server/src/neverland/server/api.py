@@ -25,6 +25,7 @@ from fastapi import (
 
 from neverland.core import service, store, vcs
 from neverland.core.plan import PlanStatus
+from neverland.core.routine import Freq, Recurrence, Routine
 from neverland.core.todo import Todo, TodoState, sort_key
 from neverland.core.vocabulary import RepoConfig, load_repo_config
 
@@ -38,6 +39,8 @@ from .schemas import (
     ProjectOut,
     ProjectSummaryOut,
     ReviewOut,
+    RoutineIn,
+    RoutineOut,
     TodoOut,
     TodoPatch,
     ViewsOut,
@@ -478,3 +481,97 @@ def capture_into_project(
     todo, _ = service.capture(cfg.data_dir, repo, title, project=project_id)
     background.add_task(vcs.background_flush, cfg.data_dir)
     return TodoOut.from_todo(todo)
+
+
+# --------------------------------------------------------------------------- #
+# Routines (recurring todos)                                                   #
+# --------------------------------------------------------------------------- #
+
+
+def _recurrence_from(payload: RoutineIn) -> Recurrence:
+    """Build and validate a :class:`Recurrence` from the create payload."""
+    try:
+        freq = Freq(payload.freq)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"unknown freq: {payload.freq!r}"
+        ) from None
+    data: dict = {"freq": payload.freq}
+    if freq is Freq.DAYS:
+        data["interval"] = payload.interval or 1
+    elif freq is Freq.WEEKLY:
+        data["weekdays"] = payload.weekdays or []
+    elif freq is Freq.MONTHLY:
+        data["monthday"] = payload.monthday
+    else:
+        data["month"], data["day"] = payload.month, payload.day
+    try:
+        return Recurrence.from_dict(data)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(
+            status_code=400, detail=f"invalid recurrence: {exc}"
+        ) from None
+
+
+@router.get("/routines", response_model=list[RoutineOut])
+def read_routines(cfg: ServerConfig = Depends(get_config)) -> list[RoutineOut]:
+    """Return every routine (active or paused)."""
+    return [RoutineOut.from_routine(r) for r in store.list_routines(cfg.data_dir)]
+
+
+@router.post("/routines", response_model=RoutineOut, status_code=201)
+def create_routine(
+    payload: RoutineIn,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> RoutineOut:
+    """Create a routine and immediately materialize it if it is already due."""
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    if payload.lead < 0:
+        raise HTTPException(status_code=400, detail="lead must be >= 0")
+    repo = _repo_for_write(cfg)
+    if payload.area is not None and payload.area not in repo.areas:
+        raise HTTPException(status_code=400, detail=f"unknown area: {payload.area!r}")
+    if payload.context is not None and payload.context not in repo.contexts:
+        raise HTTPException(
+            status_code=400, detail=f"unknown context: {payload.context!r}"
+        )
+    if payload.project is not None:
+        known = {p.id for p in store.list_active_projects(cfg.data_dir)}
+        if payload.project not in known:
+            raise HTTPException(
+                status_code=400, detail=f"unknown project: {payload.project!r}"
+            )
+
+    recurrence = _recurrence_from(payload)
+    routine = Routine(
+        id="",
+        title=title,
+        recurrence=recurrence,
+        context=payload.context,
+        area=payload.area,
+        project=payload.project,
+        lead=payload.lead,
+    )
+    created, _ = service.add_routine(cfg.data_dir, repo, routine)
+    service.materialize_routines(cfg.data_dir, repo)  # surface it if due today
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return RoutineOut.from_routine(created)
+
+
+@router.delete("/routines/{routine_id}", status_code=204)
+def delete_routine(
+    routine_id: str,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> Response:
+    """Delete a routine (its already-spawned occurrences are left untouched)."""
+    routine = store.find_routine(cfg.data_dir, routine_id)
+    if routine is None:
+        raise HTTPException(status_code=404, detail=f"unknown routine: {routine_id}")
+    repo = _repo_for_write(cfg)
+    service.remove_routine(cfg.data_dir, repo, routine)
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return Response(status_code=204)

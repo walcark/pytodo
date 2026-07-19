@@ -59,6 +59,10 @@ class Todo:
         Domain of responsibility, constrained by the repo config.
     project : str or None
         Id of the project this action belongs to, or ``None`` when standalone.
+    routine : str or None
+        Id of the routine that spawned this occurrence, or ``None`` for a hand
+        made todo. A one-way reference, like ``project``: deleting the routine
+        never dangles, the occurrence simply becomes an ordinary todo.
     waiting_on : str or None
         Who or what is blocking, when ``state`` is ``WAITING``.
     created : datetime.datetime or None
@@ -77,6 +81,7 @@ class Todo:
     context: str | None = None
     area: str | None = None
     project: str | None = None
+    routine: str | None = None
     waiting_on: str | None = None
     created: datetime | None = None
     completed: datetime | None = None
@@ -93,6 +98,7 @@ class Todo:
             "context": self.context,
             "area": self.area,
             "project": self.project,
+            "routine": self.routine,
             "waiting_on": self.waiting_on,
             "created": self.created,
             "completed": self.completed,
@@ -236,6 +242,7 @@ def parse_markdown(text: str, *, todo_id: str, path: Path | None = None) -> Todo
         context=(fm.get("context") or None),
         area=(fm.get("area") or None),
         project=(fm.get("project") or None),
+        routine=(fm.get("routine") or None),
         waiting_on=(fm.get("waiting_on") or None),
         created=_coerce_datetime(fm.get("created")),
         completed=_coerce_datetime(fm.get("completed")),

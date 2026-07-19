@@ -15,11 +15,25 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from neverland.core import vcs
+from neverland.core import service, vcs
+from neverland.core.vocabulary import load_repo_config
 
 from .config import ServerConfig
 
 log = logging.getLogger("neverland.server.poller")
+
+
+def _tick(config: ServerConfig) -> None:
+    """One poller cycle: materialize due routines, then pull/push.
+
+    Materializing here is what makes recurring todos appear on their day for a
+    long-running server without any cron: it is idempotent, so running it every
+    interval only acts when a routine actually comes due.
+    """
+    repo = load_repo_config(config.data_dir)
+    repo.sync_auto = False  # the flush below owns the network sync
+    service.materialize_routines(config.data_dir, repo)
+    vcs.background_flush(config.data_dir)
 
 
 async def run_poller(config: ServerConfig, stop: asyncio.Event) -> None:
@@ -34,9 +48,9 @@ async def run_poller(config: ServerConfig, stop: asyncio.Event) -> None:
     """
     while not stop.is_set():
         try:
-            await asyncio.to_thread(vcs.background_flush, config.data_dir)
+            await asyncio.to_thread(_tick, config)
         except Exception:
-            log.exception("poller sync failed; will retry next tick")
+            log.exception("poller tick failed; will retry next tick")
         try:
             await asyncio.wait_for(stop.wait(), timeout=config.poll_interval)
         except TimeoutError:

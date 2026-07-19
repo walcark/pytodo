@@ -461,6 +461,104 @@ body {
   cursor: default;
 }
 
+/* Routines: the create form (mode picker) and the list. */
+.routine-create {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.routine-title {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+
+.routine-fields {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+.routine-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.routine-fields select,
+.routine-fields input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.routine-fields input[type='number'] {
+  width: 90px;
+}
+
+.weekday-picker {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.routine-create .primary {
+  padding: 9px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.routine-create .primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.routine-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.routine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.routine .todo-title {
+  flex: 1;
+}
+
+.routine-badge {
+  color: var(--accent);
+  font-weight: 700;
+  flex: none;
+}
+
 /* Row actions: complete on the left, delete on the right. */
 .todo.busy {
   opacity: 0.5;

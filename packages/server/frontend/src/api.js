@@ -110,6 +110,21 @@ export const getDone = () => request('/api/done')
 // The weekly-review report (inbox, stalled projects, contextless next, stale waiting).
 export const getReview = () => request('/api/review')
 
+// Recurring routines: templates that spawn todos on their schedule.
+export const getRoutines = () => request('/api/routines')
+
+export function createRoutine(fields) {
+  return request('/api/routines', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+}
+
+export function deleteRoutine(id) {
+  return request(`/api/routines/${id}`, { method: 'DELETE' })
+}
+
 // Projects (active ones, with action counts) and their serving todos.
 export const getProjects = () => request('/api/projects')
 

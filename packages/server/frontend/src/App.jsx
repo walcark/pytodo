@@ -17,6 +17,7 @@ import History from './History.jsx'
 import Projects from './Projects.jsx'
 import QuickAdd from './QuickAdd.jsx'
 import Review from './Review.jsx'
+import Routines from './Routines.jsx'
 import Sidebar from './Sidebar.jsx'
 import Today from './Today.jsx'
 import TodoList from './TodoList.jsx'
@@ -45,8 +46,9 @@ export default function App() {
   const isHistory = isView('history')
   const isReview = isView('review')
   const isProjects = isView('projects')
+  const isRoutines = isView('routines')
   // Views with their own component and their own loader.
-  const dedicated = isToday || isHistory || isReview || isProjects
+  const dedicated = isToday || isHistory || isReview || isProjects || isRoutines
 
   const loadSidebar = useCallback(async () => {
     const [v, vocabulary, plan, projectList] = await Promise.all([
@@ -65,7 +67,7 @@ export default function App() {
     // Today, History and Review render dedicated components that load themselves.
     if (
       selection.kind === 'view' &&
-      ['today', 'history', 'review', 'projects'].includes(selection.value)
+      ['today', 'history', 'review', 'projects', 'routines'].includes(selection.value)
     ) {
       setTodos([])
       return
@@ -166,6 +168,8 @@ export default function App() {
           />
         ) : isProjects ? (
           <Projects vocab={vocab} onChanged={refresh} />
+        ) : isRoutines ? (
+          <Routines vocab={vocab} onChanged={refresh} />
         ) : isReview ? (
           <Review />
         ) : isHistory ? (
