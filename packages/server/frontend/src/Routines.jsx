@@ -27,6 +27,7 @@ function RoutineForm({ initial, vocab, submitLabel, onSubmit, onCancel }) {
   const [area, setArea] = useState(initial?.area || '')
   const [lead, setLead] = useState(initial?.lead || 0)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
 
   function toggleWeekday(d) {
     setWeekdays((cur) =>
@@ -40,6 +41,7 @@ function RoutineForm({ initial, vocab, submitLabel, onSubmit, onCancel }) {
     if (!text || busy) return
     if (freq === 'weekly' && weekdays.length === 0) return
     setBusy(true)
+    setError(null)
     try {
       const fields = {
         title: text,
@@ -57,6 +59,9 @@ function RoutineForm({ initial, vocab, submitLabel, onSubmit, onCancel }) {
       }
       await onSubmit(fields)
       if (!initial) setTitle('') // create bar clears; edit form closes instead
+    } catch (e) {
+      // Never fail silently: a rejected save must say so, right in the form.
+      setError(String(e))
     } finally {
       setBusy(false)
     }
@@ -192,28 +197,35 @@ function RoutineForm({ initial, vocab, submitLabel, onSubmit, onCancel }) {
           </button>
         )}
       </div>
+      {error && <p className="error">{error}</p>}
     </form>
   )
 }
 
-function RoutineRow({ routine, vocab, onChanged }) {
+function RoutineRow({ routine, vocab, onChanged, onError }) {
   const [editing, setEditing] = useState(false)
 
+  // Let the form handle its own failures (it shows them inline); the row's own
+  // actions report through the view-level error instead of dying quietly.
   async function save(fields) {
     await updateRoutine(routine.id, fields)
     setEditing(false)
     onChanged()
   }
 
-  async function remove() {
-    await deleteRoutine(routine.id)
-    onChanged()
+  const run = (fn) => async () => {
+    try {
+      await fn()
+      onChanged()
+    } catch (e) {
+      onError(String(e))
+    }
   }
 
-  async function togglePaused() {
-    await updateRoutine(routine.id, { active: !routine.active })
-    onChanged()
-  }
+  const remove = run(() => deleteRoutine(routine.id))
+  const togglePaused = run(() =>
+    updateRoutine(routine.id, { active: !routine.active }),
+  )
 
   if (editing) {
     return (
@@ -308,6 +320,7 @@ export default function Routines({ vocab, onChanged }) {
               routine={r}
               vocab={vocab}
               onChanged={afterChange}
+              onError={setError}
             />
           ))}
         </ul>
