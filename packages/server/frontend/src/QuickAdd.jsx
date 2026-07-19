@@ -1,12 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { capture } from './api.js'
+import { hasModifier, isTyping } from './keyboard.js'
 
-// Capture is the dominant mobile need: one field, one decision (the title),
-// straight to the inbox. Clarifying happens later, in the CLI for now.
+// Capture is the dominant need: one field, one decision (the title), straight
+// to the inbox. The `c` shortcut focuses it from anywhere.
 export default function QuickAdd({ onCaptured }) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    function onKey(event) {
+      if (event.key !== 'c' || isTyping() || hasModifier(event)) return
+      event.preventDefault()
+      inputRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   async function submit(event) {
     event.preventDefault()
@@ -25,6 +37,7 @@ export default function QuickAdd({ onCaptured }) {
   return (
     <form className="quick-add" onSubmit={submit}>
       <input
+        ref={inputRef}
         type="text"
         placeholder="Capture a todo..."
         value={title}

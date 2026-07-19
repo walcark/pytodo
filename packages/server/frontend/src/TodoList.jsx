@@ -1,12 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { hasModifier, isTyping } from './keyboard.js'
 import TodoEditor from './TodoEditor.jsx'
 
-// A single row with its direct actions: complete, edit, toggle in/out of
-// today's plan, delete. While editing, the row is replaced by the editor.
-function TodoRow({ todo, vocab, inToday, onComplete, onDelete, onEdit, onToggleToday }) {
+// A single row. Focus (keyboard navigation) and edit mode are driven by the
+// parent list; the row only owns its in-flight "busy" flag.
+function TodoRow({
+  todo,
+  vocab,
+  inToday,
+  focused,
+  editing,
+  onFocus,
+  onStartEdit,
+  onCancelEdit,
+  onComplete,
+  onDelete,
+  onEdit,
+  onToggleToday,
+}) {
   const [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(false)
 
   const run = (fn) => async () => {
     if (busy) return
@@ -22,7 +35,7 @@ function TodoRow({ todo, vocab, inToday, onComplete, onDelete, onEdit, onToggleT
     setBusy(true)
     try {
       await onEdit(todo.id, fields)
-      setEditing(false)
+      onCancelEdit()
     } finally {
       setBusy(false)
     }
@@ -36,14 +49,17 @@ function TodoRow({ todo, vocab, inToday, onComplete, onDelete, onEdit, onToggleT
           vocab={vocab}
           busy={busy}
           onSave={save}
-          onCancel={() => setEditing(false)}
+          onCancel={onCancelEdit}
         />
       </li>
     )
   }
 
   return (
-    <li className={`todo${busy ? ' busy' : ''}`}>
+    <li
+      className={`todo${busy ? ' busy' : ''}${focused ? ' focused' : ''}`}
+      onMouseEnter={onFocus}
+    >
       <button
         className="check"
         type="button"
@@ -64,7 +80,7 @@ function TodoRow({ todo, vocab, inToday, onComplete, onDelete, onEdit, onToggleT
       <button
         className={`today-toggle${inToday ? ' in-today' : ''}`}
         type="button"
-        title={inToday ? "Remove from today" : "Add to today"}
+        title={inToday ? 'Remove from today' : 'Add to today'}
         aria-label={inToday ? `Remove ${todo.title} from today` : `Add ${todo.title} to today`}
         onClick={run(onToggleToday)}
         disabled={busy}
@@ -76,7 +92,7 @@ function TodoRow({ todo, vocab, inToday, onComplete, onDelete, onEdit, onToggleT
         type="button"
         title="Edit"
         aria-label={`Edit ${todo.title}`}
-        onClick={() => setEditing(true)}
+        onClick={onStartEdit}
         disabled={busy}
       >
         ✎
@@ -104,23 +120,57 @@ export default function TodoList({
   onEdit,
   onToggleToday,
 }) {
+  const [focused, setFocused] = useState(0)
+  const [editingId, setEditingId] = useState(null)
+
+  // Keep the focused index in range as the list changes underneath it.
+  useEffect(() => {
+    setFocused((f) => Math.min(Math.max(f, 0), Math.max(todos.length - 1, 0)))
+  }, [todos])
+
+  // j/k move focus; x completes, e edits, t toggles today, on the focused row.
+  useEffect(() => {
+    function onKey(event) {
+      if (isTyping() || hasModifier(event) || editingId || todos.length === 0) return
+      const current = todos[Math.min(focused, todos.length - 1)]
+      if (event.key === 'j') setFocused((f) => Math.min(f + 1, todos.length - 1))
+      else if (event.key === 'k') setFocused((f) => Math.max(f - 1, 0))
+      else if (event.key === 'x') onComplete(current.id)
+      else if (event.key === 'e') setEditingId(current.id)
+      else if (event.key === 't') onToggleToday(current.id)
+      else return
+      event.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [todos, focused, editingId, onComplete, onToggleToday])
+
   if (todos.length === 0) {
     return <p className="empty">Nothing here.</p>
   }
+
   return (
-    <ul className="todo-list">
-      {todos.map((todo) => (
-        <TodoRow
-          key={todo.id}
-          todo={todo}
-          vocab={vocab}
-          inToday={todayIds.has(todo.id)}
-          onComplete={onComplete}
-          onDelete={onDelete}
-          onEdit={onEdit}
-          onToggleToday={onToggleToday}
-        />
-      ))}
-    </ul>
+    <>
+      <ul className="todo-list">
+        {todos.map((todo, i) => (
+          <TodoRow
+            key={todo.id}
+            todo={todo}
+            vocab={vocab}
+            inToday={todayIds.has(todo.id)}
+            focused={i === focused && editingId === null}
+            editing={editingId === todo.id}
+            onFocus={() => setFocused(i)}
+            onStartEdit={() => setEditingId(todo.id)}
+            onCancelEdit={() => setEditingId(null)}
+            onComplete={onComplete}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            onToggleToday={onToggleToday}
+          />
+        ))}
+      </ul>
+      <p className="kbd-hint">j/k move · x done · e edit · t today · c capture</p>
+    </>
   )
 }

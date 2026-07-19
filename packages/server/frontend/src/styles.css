@@ -246,6 +246,18 @@ body {
   padding: 20px 4px;
 }
 
+/* Keyboard-focused row (j/k navigation). */
+.todo.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.kbd-hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 12px 2px 0;
+}
+
 .error {
   color: #c0392b;
 }
