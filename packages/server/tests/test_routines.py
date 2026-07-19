@@ -84,6 +84,56 @@ def test_lead_makes_it_appear_early(tmp_path):
     assert [t.title for t in spawned] == ["Buy gift"]
 
 
+def test_edit_title_keeps_the_schedule(client, tmp_path):
+    rid = client.post(
+        "/api/routines", json={"title": "Aroser", "freq": "days", "interval": 3}
+    ).json()["id"]
+    before = store.list_routines(tmp_path)[0].next_due
+
+    resp = client.patch(f"/api/routines/{rid}", json={"title": "Arroser les plantes"})
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "Arroser les plantes"
+    assert store.list_routines(tmp_path)[0].next_due == before  # schedule untouched
+
+
+def test_changing_the_rule_reseeds_next_due(client, tmp_path):
+    # yearly in December -> next_due far away; switch to daily -> due today
+    rid = client.post(
+        "/api/routines",
+        json={"title": "Thing", "freq": "yearly", "month": 12, "day": 25},
+    ).json()["id"]
+    assert store.list_routines(tmp_path)[0].next_due != date.today()
+
+    resp = client.patch(f"/api/routines/{rid}", json={"freq": "days", "interval": 1})
+    assert resp.status_code == 200
+    assert resp.json()["rule"] == "every day"
+    assert store.list_routines(tmp_path)[0].next_due == date.today()
+
+
+def test_pausing_stops_materialization(client, tmp_path):
+    rid = client.post(
+        "/api/routines", json={"title": "Run", "freq": "days", "interval": 1}
+    ).json()["id"]
+    # drop the occurrence created on purpose, then pause and re-materialize
+    occ = client.get("/api/todos", params={"view": "next"}).json()[0]
+    client.delete(f"/api/todos/{occ['id']}")
+
+    client.patch(f"/api/routines/{rid}", json={"active": False})
+    assert service.materialize_routines(tmp_path, RepoConfig(sync_auto=False)) == []
+
+
+def test_edit_validation_and_unknown(client):
+    rid = client.post(
+        "/api/routines", json={"title": "X", "freq": "days", "interval": 1}
+    ).json()["id"]
+    assert client.patch(f"/api/routines/{rid}", json={"title": " "}).status_code == 400
+    assert (
+        client.patch(f"/api/routines/{rid}", json={"area": "nope"}).status_code == 400
+    )
+    assert client.patch(f"/api/routines/{rid}", json={"lead": -1}).status_code == 400
+    assert client.patch("/api/routines/nope", json={"title": "y"}).status_code == 404
+
+
 def test_delete_routine(client):
     rid = client.post(
         "/api/routines", json={"title": "Bank", "freq": "monthly", "monthday": 1}

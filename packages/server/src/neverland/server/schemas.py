@@ -156,8 +156,33 @@ class RoutineIn(BaseModel):
     lead: int = 0
 
 
+class RoutinePatch(BaseModel):
+    """Partial edit of a routine; only the fields sent are applied.
+
+    Sending ``freq`` means the rule itself changes, so the server rebuilds the
+    recurrence from the rule fields and reseeds ``next_due``.
+    """
+
+    title: str | None = None
+    freq: str | None = None
+    interval: int | None = None
+    weekdays: list[str] | None = None
+    monthday: int | None = None
+    month: int | None = None
+    day: int | None = None
+    context: str | None = None
+    area: str | None = None
+    project: str | None = None
+    lead: int | None = None
+    active: bool | None = None
+
+
 class RoutineOut(BaseModel):
-    """A routine as sent to the client, with a human-readable rule."""
+    """A routine as sent to the client.
+
+    Carries both the human-readable ``rule`` (for display) and the structured
+    rule fields (so an edit form can prefill its pickers).
+    """
 
     id: str
     title: str
@@ -168,9 +193,16 @@ class RoutineOut(BaseModel):
     context: str | None = None
     area: str | None = None
     project: str | None = None
+    freq: str
+    interval: int | None = None
+    weekdays: list[str] | None = None
+    monthday: int | None = None
+    month: int | None = None
+    day: int | None = None
 
     @classmethod
     def from_routine(cls, routine: Routine) -> RoutineOut:
+        rule = routine.recurrence.to_dict()
         return cls(
             id=routine.id,
             title=routine.title,
@@ -181,6 +213,12 @@ class RoutineOut(BaseModel):
             context=routine.context,
             area=routine.area,
             project=routine.project,
+            freq=rule["freq"],
+            interval=rule.get("interval"),
+            weekdays=rule.get("weekdays"),
+            monthday=rule.get("monthday"),
+            month=rule.get("month"),
+            day=rule.get("day"),
         )
 
 

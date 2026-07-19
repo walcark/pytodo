@@ -559,6 +559,31 @@ body {
   flex: none;
 }
 
+.routine.paused {
+  opacity: 0.55;
+}
+
+.routine.editing {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.routine-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.routine-actions button:not(.primary) {
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
 /* Row actions: complete on the left, delete on the right. */
 .todo.busy {
   opacity: 0.5;

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { createRoutine, deleteRoutine, getRoutines } from './api.js'
+import {
+  createRoutine,
+  deleteRoutine,
+  getRoutines,
+  updateRoutine,
+} from './api.js'
 
 const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const MONTHS = [
@@ -8,19 +13,19 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-// The recurrence picker: one mode, one obvious input each. It builds the exact
-// payload the API expects (only the fields the chosen freq needs).
-function CreateRoutine({ vocab, onCreated }) {
-  const [title, setTitle] = useState('')
-  const [freq, setFreq] = useState('days')
-  const [interval, setIntervalDays] = useState(3)
-  const [weekdays, setWeekdays] = useState(['mon'])
-  const [monthday, setMonthday] = useState(1)
-  const [month, setMonth] = useState(1)
-  const [day, setDay] = useState(1)
-  const [context, setContext] = useState('')
-  const [area, setArea] = useState('')
-  const [lead, setLead] = useState(0)
+// The recurrence picker: one mode, one obvious input each. Shared by the create
+// bar and the per-routine edit form, so both build the exact same payload.
+function RoutineForm({ initial, vocab, submitLabel, onSubmit, onCancel }) {
+  const [title, setTitle] = useState(initial?.title || '')
+  const [freq, setFreq] = useState(initial?.freq || 'days')
+  const [interval, setIntervalDays] = useState(initial?.interval || 3)
+  const [weekdays, setWeekdays] = useState(initial?.weekdays || ['mon'])
+  const [monthday, setMonthday] = useState(initial?.monthday || 1)
+  const [month, setMonth] = useState(initial?.month || 1)
+  const [day, setDay] = useState(initial?.day || 1)
+  const [context, setContext] = useState(initial?.context || '')
+  const [area, setArea] = useState(initial?.area || '')
+  const [lead, setLead] = useState(initial?.lead || 0)
   const [busy, setBusy] = useState(false)
 
   function toggleWeekday(d) {
@@ -50,9 +55,8 @@ function CreateRoutine({ vocab, onCreated }) {
         fields.month = Number(month) || 1
         fields.day = Number(day) || 1
       }
-      await createRoutine(fields)
-      setTitle('')
-      onCreated()
+      await onSubmit(fields)
+      if (!initial) setTitle('') // create bar clears; edit form closes instead
     } finally {
       setBusy(false)
     }
@@ -178,14 +182,94 @@ function CreateRoutine({ vocab, onCreated }) {
         </label>
       </div>
 
-      <button type="submit" className="primary" disabled={busy || !title.trim()}>
-        Create routine
-      </button>
+      <div className="routine-actions">
+        <button type="submit" className="primary" disabled={busy || !title.trim()}>
+          {submitLabel}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   )
 }
 
-// The routines view: define recurring todos and see when each next fires.
+function RoutineRow({ routine, vocab, onChanged }) {
+  const [editing, setEditing] = useState(false)
+
+  async function save(fields) {
+    await updateRoutine(routine.id, fields)
+    setEditing(false)
+    onChanged()
+  }
+
+  async function remove() {
+    await deleteRoutine(routine.id)
+    onChanged()
+  }
+
+  async function togglePaused() {
+    await updateRoutine(routine.id, { active: !routine.active })
+    onChanged()
+  }
+
+  if (editing) {
+    return (
+      <li className="routine editing">
+        <RoutineForm
+          initial={routine}
+          vocab={vocab}
+          submitLabel="Save"
+          onSubmit={save}
+          onCancel={() => setEditing(false)}
+        />
+      </li>
+    )
+  }
+
+  return (
+    <li className={`routine${routine.active ? '' : ' paused'}`}>
+      <span className="routine-badge">⟳</span>
+      <span className="todo-title">{routine.title}</span>
+      <span className="tag">{routine.rule}</span>
+      {routine.lead > 0 && <span className="tag">{routine.lead}d before</span>}
+      {routine.context && <span className="tag context">{routine.context}</span>}
+      {routine.area && <span className="tag area">{routine.area}</span>}
+      {routine.next_due && <span className="tag date">next {routine.next_due}</span>}
+      <button
+        className="today-toggle"
+        type="button"
+        title={routine.active ? 'Pause this routine' : 'Resume this routine'}
+        onClick={togglePaused}
+      >
+        {routine.active ? '❚❚ Pause' : '▶ Resume'}
+      </button>
+      <button
+        className="row-edit"
+        type="button"
+        title="Edit routine"
+        aria-label={`Edit ${routine.title}`}
+        onClick={() => setEditing(true)}
+      >
+        ✎
+      </button>
+      <button
+        className="row-del"
+        type="button"
+        title="Delete routine"
+        aria-label={`Delete ${routine.title}`}
+        onClick={remove}
+      >
+        ✕
+      </button>
+    </li>
+  )
+}
+
+// The routines view: define recurring todos, see when each next fires, edit or
+// pause them.
 export default function Routines({ vocab, onChanged }) {
   const [routines, setRoutines] = useState([])
   const [error, setError] = useState(null)
@@ -203,38 +287,28 @@ export default function Routines({ vocab, onChanged }) {
     onChanged()
   }
 
-  async function remove(id) {
-    await deleteRoutine(id)
-    afterChange()
-  }
-
   return (
     <div className="routines">
-      <CreateRoutine vocab={vocab} onCreated={afterChange} />
+      <RoutineForm
+        vocab={vocab}
+        submitLabel="Create routine"
+        onSubmit={async (fields) => {
+          await createRoutine(fields)
+          afterChange()
+        }}
+      />
       {error && <p className="error">{error}</p>}
       {routines.length === 0 ? (
         <p className="empty">No routines yet.</p>
       ) : (
         <ul className="routine-list">
           {routines.map((r) => (
-            <li key={r.id} className="routine">
-              <span className="routine-badge">⟳</span>
-              <span className="todo-title">{r.title}</span>
-              <span className="tag">{r.rule}</span>
-              {r.lead > 0 && <span className="tag">{r.lead}d before</span>}
-              {r.context && <span className="tag context">{r.context}</span>}
-              {r.area && <span className="tag area">{r.area}</span>}
-              {r.next_due && <span className="tag date">next {r.next_due}</span>}
-              <button
-                className="row-del"
-                type="button"
-                title="Delete routine"
-                aria-label={`Delete ${r.title}`}
-                onClick={() => remove(r.id)}
-              >
-                ✕
-              </button>
-            </li>
+            <RoutineRow
+              key={r.id}
+              routine={r}
+              vocab={vocab}
+              onChanged={afterChange}
+            />
           ))}
         </ul>
       )}

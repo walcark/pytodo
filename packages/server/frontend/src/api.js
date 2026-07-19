@@ -121,6 +121,14 @@ export function createRoutine(fields) {
   })
 }
 
+export function updateRoutine(id, fields) {
+  return request(`/api/routines/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+}
+
 export function deleteRoutine(id) {
   return request(`/api/routines/${id}`, { method: 'DELETE' })
 }

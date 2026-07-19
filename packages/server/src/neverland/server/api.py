@@ -41,6 +41,7 @@ from .schemas import (
     ReviewOut,
     RoutineIn,
     RoutineOut,
+    RoutinePatch,
     TodoOut,
     TodoPatch,
     ViewsOut,
@@ -488,8 +489,8 @@ def capture_into_project(
 # --------------------------------------------------------------------------- #
 
 
-def _recurrence_from(payload: RoutineIn) -> Recurrence:
-    """Build and validate a :class:`Recurrence` from the create payload."""
+def _recurrence_from(payload: RoutineIn | RoutinePatch) -> Recurrence:
+    """Build and validate a :class:`Recurrence` from the rule fields of a payload."""
     try:
         freq = Freq(payload.freq)
     except ValueError:
@@ -559,6 +560,65 @@ def create_routine(
     service.materialize_routines(cfg.data_dir, repo)  # surface it if due today
     background.add_task(vcs.background_flush, cfg.data_dir)
     return RoutineOut.from_routine(created)
+
+
+@router.patch("/routines/{routine_id}", response_model=RoutineOut)
+def update_routine(
+    routine_id: str,
+    payload: RoutinePatch,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> RoutineOut:
+    """Edit a routine: fix a typo, change its schedule, pause it.
+
+    Changing the rule (sending ``freq``) reseeds ``next_due``, otherwise the
+    routine would keep firing on the schedule it no longer has.
+    """
+    routine = store.find_routine(cfg.data_dir, routine_id)
+    if routine is None:
+        raise HTTPException(status_code=404, detail=f"unknown routine: {routine_id}")
+    repo = _repo_for_write(cfg)
+    fields = payload.model_dump(exclude_unset=True)
+
+    if "title" in fields:
+        title = (fields["title"] or "").strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title must not be empty")
+        routine.title = title
+    if "area" in fields:
+        area = fields["area"]
+        if area is not None and area not in repo.areas:
+            raise HTTPException(status_code=400, detail=f"unknown area: {area!r}")
+        routine.area = area
+    if "context" in fields:
+        context = fields["context"]
+        if context is not None and context not in repo.contexts:
+            raise HTTPException(status_code=400, detail=f"unknown context: {context!r}")
+        routine.context = context
+    if "project" in fields:
+        project = fields["project"]
+        if project is not None:
+            known = {p.id for p in store.list_active_projects(cfg.data_dir)}
+            if project not in known:
+                raise HTTPException(
+                    status_code=400, detail=f"unknown project: {project!r}"
+                )
+        routine.project = project
+    if "lead" in fields:
+        lead = int(fields["lead"] or 0)
+        if lead < 0:
+            raise HTTPException(status_code=400, detail="lead must be >= 0")
+        routine.lead = lead
+    if "active" in fields:
+        routine.active = bool(fields["active"])
+    if "freq" in fields:
+        routine.recurrence = _recurrence_from(payload)
+        routine.next_due = routine.recurrence.first_on_or_after(date.today())
+
+    service.update_routine(cfg.data_dir, repo, routine)
+    service.materialize_routines(cfg.data_dir, repo)  # surface it if now due
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return RoutineOut.from_routine(routine)
 
 
 @router.delete("/routines/{routine_id}", status_code=204)

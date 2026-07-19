@@ -213,6 +213,17 @@ def add_routine(
     return routine, auto_sync(data_dir, cfg, f"routine: add {routine.title}")
 
 
+def update_routine(data_dir: Path, cfg: RepoConfig, routine: Routine) -> vcs.SyncResult:
+    """Persist an edited routine and sync.
+
+    The caller mutates the routine first (title, rule, lead, ...). When the
+    *rule* itself changes the caller must also reseed ``next_due``, or the
+    routine keeps firing on the schedule it no longer has.
+    """
+    store.save_routine(routine)
+    return auto_sync(data_dir, cfg, f"routine: edit {routine.title}")
+
+
 def remove_routine(data_dir: Path, cfg: RepoConfig, routine: Routine) -> vcs.SyncResult:
     """Delete a routine and sync (its already-spawned occurrences are kept)."""
     store.delete_routine(routine)
