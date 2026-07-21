@@ -111,6 +111,27 @@ def find_active(data_dir: Path, todo_id: str) -> Todo | None:
     return None
 
 
+def find_done(data_dir: Path, todo_id: str) -> Todo | None:
+    """Return the archived todo with ``todo_id``, or ``None`` if absent.
+
+    Parameters
+    ----------
+    data_dir : pathlib.Path
+        Data repo root.
+    todo_id : str
+        Identifier (the file stem) to look up under ``done/``.
+
+    Returns
+    -------
+    Todo or None
+        The matching archived todo, or ``None`` when no such file exists.
+    """
+    for todo in list_done(data_dir):
+        if todo.id == todo_id:
+            return todo
+    return None
+
+
 def create_todo(
     data_dir: Path,
     *,
@@ -225,6 +246,47 @@ def move_to_done(todo: Todo, data_dir: Path, *, now: datetime | None = None) -> 
     dest = dest_dir / f"{todo.id}.md"
     todo.state = TodoState.DONE
     todo.completed = now.replace(microsecond=0)
+    dest.write_text(todo.to_markdown(), encoding="utf-8")
+    src.unlink()
+    todo.path = dest
+    return dest
+
+
+def move_to_active(
+    todo: Todo, data_dir: Path, *, state: TodoState = TodoState.NEXT
+) -> Path:
+    """Move an archived todo back under ``todos/``, clearing its completion.
+
+    The exact mirror of :func:`move_to_done`. The state a todo held *before*
+    completion is not recorded anywhere, so the caller picks the one to restore;
+    ``next`` is the sensible default, since something you deliberately reopen is
+    actionable again.
+
+    Parameters
+    ----------
+    todo : Todo
+        Archived todo to reopen; its ``path`` must exist under ``done/``.
+    data_dir : pathlib.Path
+        Data repo root.
+    state : TodoState, optional
+        State to restore the todo to, defaults to ``TodoState.NEXT``.
+
+    Returns
+    -------
+    pathlib.Path
+        The new file location under ``todos/``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the source file does not exist.
+    """
+    src = todo.require_path()
+    dest_dir = todos_dir(data_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{todo.id}.md"
+    todo.state = state
+    todo.completed = None
     dest.write_text(todo.to_markdown(), encoding="utf-8")
     src.unlink()
     todo.path = dest

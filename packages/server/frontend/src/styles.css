@@ -813,9 +813,30 @@ body {
 }
 
 .row-edit:disabled,
-.today-toggle:disabled {
+.today-toggle:disabled,
+.row-reopen:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* History: undo a completion. Shaped like the Today toggle, not like the
+   destructive round buttons, since reopening restores rather than removes. */
+.row-reopen {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  flex: none;
+  margin-left: auto;
+}
+
+.row-reopen:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* Completed rows (Today done entries, History): muted and struck through. */

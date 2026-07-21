@@ -107,6 +107,11 @@ export function setTodayStatus(id, status) {
 // The archive of completed todos, most recently completed first.
 export const getDone = () => request('/api/done')
 
+// Undo a completion: the todo leaves the archive and comes back as "next".
+export function reopenTodo(id) {
+  return request(`/api/todos/${id}/reopen`, { method: 'POST' })
+}
+
 // The weekly-review report (inbox, stalled projects, contextless next, stale waiting).
 export const getReview = () => request('/api/review')
 

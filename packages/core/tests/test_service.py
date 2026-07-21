@@ -63,6 +63,44 @@ def test_complete_without_today_plan_is_fine(tmp_path, no_sync):
     assert list(done_dir(tmp_path).glob("*.md"))
 
 
+def test_reopen_is_the_undo_of_complete(tmp_path, no_sync):
+    cfg = RepoConfig()
+    todo = store.create_todo(tmp_path, title="Ticked too fast", state=TodoState.NEXT)
+
+    plan = store.load_day_plan(tmp_path, date.today())
+    plan.entries.append(PlanEntry(todo_id=todo.id, title=todo.title))
+    store.save_day_plan(tmp_path, plan)
+
+    service.complete(tmp_path, cfg, [todo])
+    service.reopen(tmp_path, cfg, [todo])
+
+    assert not list(done_dir(tmp_path).glob("*.md"))
+    reloaded = store.find_active(tmp_path, todo.id)
+    assert reloaded.state is TodoState.NEXT
+    assert reloaded.completed is None
+    # the day status follows the lifecycle back
+    day = store.load_day_plan(tmp_path, date.today())
+    assert day.find(todo.id).status is PlanStatus.PLANNED
+
+
+def test_reopen_leaves_a_hand_set_day_status_alone(tmp_path, no_sync):
+    cfg = RepoConfig()
+    todo = store.create_todo(tmp_path, title="Was in progress", state=TodoState.NEXT)
+
+    plan = store.load_day_plan(tmp_path, date.today())
+    plan.entries.append(
+        PlanEntry(todo_id=todo.id, title=todo.title, status=PlanStatus.DOING)
+    )
+    store.save_day_plan(tmp_path, plan)
+
+    # never completed, so its "doing" status must survive an unrelated reopen
+    store.move_to_done(todo, tmp_path)
+    service.reopen(tmp_path, cfg, [todo])
+
+    day = store.load_day_plan(tmp_path, date.today())
+    assert day.find(todo.id).status is PlanStatus.DOING
+
+
 def test_delete_removes_the_file(tmp_path, no_sync):
     cfg = RepoConfig()
     todo = store.create_todo(tmp_path, title="Scratch that")

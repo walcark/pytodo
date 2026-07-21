@@ -87,10 +87,40 @@ def test_delete_endpoint_removes(client, tmp_path):
     assert store.list_done(tmp_path) == []
 
 
+def test_reopen_endpoint_restores_as_next(client, tmp_path):
+    todo_id = _capture(client, "Ticked off by mistake")
+    client.post(f"/api/todos/{todo_id}/complete")
+
+    resp = client.post(f"/api/todos/{todo_id}/reopen")
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "next"
+    assert store.list_done(tmp_path) == []
+    stored = store.find_active(tmp_path, todo_id)
+    assert stored.state is TodoState.NEXT
+    assert stored.completed is None
+
+
+def test_reopen_unticks_todays_plan(client, tmp_path):
+    todo_id = _capture(client, "Planned then finished")
+    client.post(f"/api/today/{todo_id}")
+    client.post(f"/api/todos/{todo_id}/complete")
+    assert client.get("/api/today").json()["entries"][0]["status"] == "done"
+
+    client.post(f"/api/todos/{todo_id}/reopen")
+    assert client.get("/api/today").json()["entries"][0]["status"] == "planned"
+
+
+def test_reopen_only_looks_in_the_archive(client):
+    todo_id = _capture(client, "Still active")
+    # an active todo is not an archived one, so it cannot be reopened
+    assert client.post(f"/api/todos/{todo_id}/reopen").status_code == 404
+
+
 def test_missing_todo_is_404(client):
     assert client.patch("/api/todos/nope", json={"state": "next"}).status_code == 404
     assert client.post("/api/todos/nope/complete").status_code == 404
     assert client.delete("/api/todos/nope").status_code == 404
+    assert client.post("/api/todos/nope/reopen").status_code == 404
 
 
 def test_mutation_makes_a_git_commit(client, tmp_path):

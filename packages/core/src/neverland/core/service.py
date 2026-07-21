@@ -144,6 +144,30 @@ def delete(data_dir: Path, cfg: RepoConfig, todos: list[Todo]) -> vcs.SyncResult
     return auto_sync(data_dir, cfg, f"del: {len(todos)} todo(s)")
 
 
+def reopen(
+    data_dir: Path,
+    cfg: RepoConfig,
+    todos: list[Todo],
+    *,
+    state: TodoState = TodoState.NEXT,
+) -> vcs.SyncResult:
+    """Bring archived ``todos`` back to the active list, and sync.
+
+    The undo of :func:`complete`, for the item ticked off by mistake. The state
+    held before completion is not recorded, so everything comes back as
+    ``next``; adjust afterwards if it belonged on another list.
+
+    A routine occurrence reopens like any other todo, but the routine's own
+    schedule is left untouched: rolling an advance back is not reliably
+    invertible, and leaving it alone is the conservative choice, since
+    materialization skips a routine that already has an open occurrence.
+    """
+    for todo in todos:
+        store.move_to_active(todo, data_dir, state=state)
+    reflect_reopen_in_today(data_dir, [t.id for t in todos])
+    return auto_sync(data_dir, cfg, f"reopen: {len(todos)} todo(s)")
+
+
 def _advance_routines(data_dir: Path, todos: list[Todo]) -> None:
     """Move the routine of every resolved occurrence to its next due date.
 
@@ -340,6 +364,28 @@ def reflect_done_in_today(data_dir: Path, todo_ids: list[str]) -> None:
         entry = plan.find(todo_id)
         if entry is not None and entry.status is not PlanStatus.DONE:
             entry.status = PlanStatus.DONE
+            changed = True
+    if changed:
+        store.save_day_plan(data_dir, plan)
+
+
+def reflect_reopen_in_today(data_dir: Path, todo_ids: list[str]) -> None:
+    """Put ``todo_ids`` back to ``planned`` in today's plan, if they appear in it.
+
+    The mirror of :func:`reflect_done_in_today`: undoing a completion also undoes
+    the completion it stamped on the day. Entries left at ``planned`` or
+    ``doing`` are untouched, so reopening never demotes a day status the user
+    set by hand.
+    """
+    today = date.today()
+    if not store.plan_exists(data_dir, today):
+        return
+    plan = store.load_day_plan(data_dir, today)
+    changed = False
+    for todo_id in todo_ids:
+        entry = plan.find(todo_id)
+        if entry is not None and entry.status is PlanStatus.DONE:
+            entry.status = PlanStatus.PLANNED
             changed = True
     if changed:
         store.save_day_plan(data_dir, plan)

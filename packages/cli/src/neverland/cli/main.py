@@ -417,6 +417,29 @@ def done():
     _emit_sync(sync)
 
 
+@app.command()
+@handle_errors
+def reopen():
+    """Undo a completion: bring archived todos back to the next list.
+
+    They come back as ``next``, since the state held before completion is not
+    recorded; use ``todo edit`` afterwards if one belonged on another list.
+    """
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    done_todos = store.list_done(data_dir)
+    if not done_todos:
+        console.print("[grey62]No completed todo.[/grey62]")
+        raise typer.Exit(0)
+    done_todos.sort(key=lambda t: t.completed or datetime.min, reverse=True)
+    selected = prompt.select_todos(done_todos, multi=True)
+    if not selected:
+        raise typer.Exit(1)
+    sync = service.reopen(data_dir, cfg, selected)
+    _ok(f"{len(selected)} todo(s) reopened.")
+    _emit_sync(sync)
+
+
 @app.command("del")
 @handle_errors
 def delete():

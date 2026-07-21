@@ -188,7 +188,7 @@ export default function App() {
         ) : isReview ? (
           <Review />
         ) : isHistory ? (
-          <History />
+          <History onChanged={refresh} />
         ) : isToday ? (
           <>
             <QuickAdd onCaptured={refresh} />

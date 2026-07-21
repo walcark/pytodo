@@ -193,6 +193,14 @@ def _require_active(cfg: ServerConfig, todo_id: str) -> Todo:
     return todo
 
 
+def _require_done(cfg: ServerConfig, todo_id: str) -> Todo:
+    """Return the archived todo with ``todo_id`` or raise ``404``."""
+    todo = store.find_done(cfg.data_dir, todo_id)
+    if todo is None:
+        raise HTTPException(status_code=404, detail=f"unknown archived todo: {todo_id}")
+    return todo
+
+
 def _apply_patch(cfg: ServerConfig, repo: RepoConfig, todo: Todo, fields: dict) -> None:
     """Validate the patched ``fields`` against the vocabulary and apply them.
 
@@ -272,6 +280,24 @@ def complete_todo(
     todo = _require_active(cfg, todo_id)
     repo = _repo_for_write(cfg)
     service.complete(cfg.data_dir, repo, [todo])
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return TodoOut.from_todo(todo)
+
+
+@router.post("/todos/{todo_id}/reopen", response_model=TodoOut)
+def reopen_todo(
+    todo_id: str,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> TodoOut:
+    """Undo a completion: bring an archived todo back to the active list.
+
+    It comes back as ``next``, since the state it held before completion is not
+    recorded; edit it afterwards if it belonged on another list.
+    """
+    todo = _require_done(cfg, todo_id)
+    repo = _repo_for_write(cfg)
+    service.reopen(cfg.data_dir, repo, [todo])
     background.add_task(vcs.background_flush, cfg.data_dir)
     return TodoOut.from_todo(todo)
 
