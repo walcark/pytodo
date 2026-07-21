@@ -25,6 +25,7 @@ from fastapi import (
 
 from neverland.core import service, store, vcs
 from neverland.core.plan import PlanStatus
+from neverland.core.project import Project, ProjectState
 from neverland.core.routine import Freq, Recurrence, Routine
 from neverland.core.todo import Todo, TodoState, sort_key
 from neverland.core.vocabulary import RepoConfig, load_repo_config
@@ -432,8 +433,14 @@ def read_review(cfg: ServerConfig = Depends(get_config)) -> ReviewOut:
 
 
 @router.get("/projects", response_model=list[ProjectSummaryOut])
-def read_projects(cfg: ServerConfig = Depends(get_config)) -> list[ProjectSummaryOut]:
-    """Return the active projects, each with its action and next-action counts."""
+def read_projects(
+    include_done: bool = False, cfg: ServerConfig = Depends(get_config)
+) -> list[ProjectSummaryOut]:
+    """Return the active projects, each with its action and next-action counts.
+
+    ``include_done`` appends the completed ones, so a project finished by
+    mistake stays reachable instead of vanishing from every view.
+    """
     active = store.list_active(cfg.data_dir)
     actions: dict[str, int] = {}
     nexts: dict[str, int] = {}
@@ -442,11 +449,16 @@ def read_projects(cfg: ServerConfig = Depends(get_config)) -> list[ProjectSummar
             actions[todo.project] = actions.get(todo.project, 0) + 1
             if todo.state is TodoState.NEXT:
                 nexts[todo.project] = nexts.get(todo.project, 0) + 1
+    projects = store.list_active_projects(cfg.data_dir)
+    if include_done:
+        projects += [
+            p for p in store.list_projects(cfg.data_dir) if p.state is ProjectState.DONE
+        ]
     return [
         ProjectSummaryOut.from_project(
             p, actions=actions.get(p.id, 0), nexts=nexts.get(p.id, 0)
         )
-        for p in store.list_active_projects(cfg.data_dir)
+        for p in projects
     ]
 
 
@@ -468,6 +480,69 @@ def create_project(
     )
     background.add_task(vcs.background_flush, cfg.data_dir)
     return ProjectOut.from_project(project)
+
+
+def _require_project(cfg: ServerConfig, project_id: str) -> Project:
+    """Return the project with ``project_id`` or raise ``404``."""
+    for project in store.list_projects(cfg.data_dir):
+        if project.id == project_id:
+            return project
+    raise HTTPException(status_code=404, detail=f"unknown project: {project_id}")
+
+
+@router.post("/projects/{project_id}/complete", response_model=ProjectOut)
+def complete_project(
+    project_id: str,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> ProjectOut:
+    """Mark a project as done.
+
+    The actions still serving it stay active: only the outcome completes here.
+    Callers should show ``action_count`` first so the choice is informed.
+    """
+    project = _require_project(cfg, project_id)
+    repo = _repo_for_write(cfg)
+    service.complete_project(cfg.data_dir, repo, project)
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return ProjectOut.from_project(project)
+
+
+@router.post("/projects/{project_id}/reopen", response_model=ProjectOut)
+def reopen_project(
+    project_id: str,
+    background: BackgroundTasks,
+    cfg: ServerConfig = Depends(get_config),
+) -> ProjectOut:
+    """Undo a project completion: bring the outcome back to active."""
+    project = _require_project(cfg, project_id)
+    repo = _repo_for_write(cfg)
+    service.reopen_project(cfg.data_dir, repo, project)
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return ProjectOut.from_project(project)
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project(
+    project_id: str,
+    background: BackgroundTasks,
+    detach: bool = False,
+    cfg: ServerConfig = Depends(get_config),
+) -> Response:
+    """Delete a project, refusing while active todos still reference it.
+
+    ``detach=true`` clears the ``project`` field of those todos first, so the
+    actions survive the outcome they served. Refusing by default keeps the
+    decision explicit instead of silently rewriting todos.
+    """
+    project = _require_project(cfg, project_id)
+    repo = _repo_for_write(cfg)
+    try:
+        service.remove_project(cfg.data_dir, repo, project, detach=detach)
+    except service.ProjectHasActions as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background.add_task(vcs.background_flush, cfg.data_dir)
+    return Response(status_code=204)
 
 
 @router.get("/projects/{project_id}/todos", response_model=list[TodoOut])

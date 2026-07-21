@@ -44,7 +44,12 @@ async function request(path, options = {}) {
     if (!token) throw new Error('authentication required')
     resp = await send()
   }
-  if (!resp.ok) throw new Error(`${path} -> ${resp.status}`)
+  if (!resp.ok) {
+    // Carry the status so callers can tell a refusal (409) from a real failure.
+    const error = new Error(`${path} -> ${resp.status}`)
+    error.status = resp.status
+    throw error
+  }
   if (resp.status === 204) return null
   return resp.json()
 }
@@ -139,7 +144,20 @@ export function deleteRoutine(id) {
 }
 
 // Projects (active ones, with action counts) and their serving todos.
-export const getProjects = () => request('/api/projects')
+export const getProjects = (includeDone = false) =>
+  request(`/api/projects${includeDone ? '?include_done=true' : ''}`)
+
+// Complete an outcome. Its actions stay active: only the project closes.
+export const completeProject = (id) =>
+  request(`/api/projects/${id}/complete`, { method: 'POST' })
+
+export const reopenProject = (id) =>
+  request(`/api/projects/${id}/reopen`, { method: 'POST' })
+
+// Refused with 409 while active todos reference the project; detach clears
+// their project field first so the actions survive.
+export const deleteProject = (id, detach = false) =>
+  request(`/api/projects/${id}${detach ? '?detach=true' : ''}`, { method: 'DELETE' })
 
 export const getProjectTodos = (id) => request(`/api/projects/${id}/todos`)
 

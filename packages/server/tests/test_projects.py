@@ -102,3 +102,82 @@ def test_create_project_makes_a_git_commit(client, tmp_path):
         check=True,
     )
     assert "project: add Tracked project" in log.stdout
+
+
+def test_complete_project_leaves_its_actions_alone(client):
+    pid = _create_project(client)
+    todo_id = client.post(f"/api/projects/{pid}/todos", json={"title": "Book slot"})
+    todo_id = todo_id.json()["id"]
+
+    resp = client.post(f"/api/projects/{pid}/complete")
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "done"
+    assert resp.json()["completed"] is not None
+
+    # gone from the default list, still reachable with include_done
+    assert [p["id"] for p in client.get("/api/projects").json()] == []
+    done = client.get("/api/projects?include_done=true").json()
+    assert [p["id"] for p in done] == [pid]
+    # a finished outcome is not stalled, it is over
+    assert done[0]["stalled"] is False
+
+    # the action survives untouched, still linked to the project
+    todos = client.get("/api/todos?view=all").json()
+    assert [(t["id"], t["project"]) for t in todos] == [(todo_id, pid)]
+
+
+def test_reopen_project_undoes_completion(client):
+    pid = _create_project(client)
+    client.post(f"/api/projects/{pid}/complete")
+
+    resp = client.post(f"/api/projects/{pid}/reopen")
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "active"
+    assert resp.json()["completed"] is None
+    assert [p["id"] for p in client.get("/api/projects").json()] == [pid]
+
+
+def test_delete_project_refuses_while_actions_reference_it(client):
+    pid = _create_project(client)
+    client.post(f"/api/projects/{pid}/todos", json={"title": "Book slot"})
+
+    assert client.delete(f"/api/projects/{pid}").status_code == 409
+    # nothing happened: the project is still there
+    assert [p["id"] for p in client.get("/api/projects").json()] == [pid]
+
+
+def test_delete_project_with_detach_keeps_the_actions(client):
+    pid = _create_project(client)
+    todo_id = client.post(
+        f"/api/projects/{pid}/todos", json={"title": "Book slot"}
+    ).json()["id"]
+
+    assert client.delete(f"/api/projects/{pid}?detach=true").status_code == 204
+    assert client.get("/api/projects?include_done=true").json() == []
+    # the action survives, without a project
+    todos = client.get("/api/todos?view=all").json()
+    assert [(t["id"], t["project"]) for t in todos] == [(todo_id, None)]
+
+
+def test_delete_project_without_actions_needs_no_detach(client):
+    pid = _create_project(client)
+    assert client.delete(f"/api/projects/{pid}").status_code == 204
+    assert client.get("/api/projects?include_done=true").json() == []
+
+
+def test_archived_todos_never_block_a_deletion(client):
+    pid = _create_project(client)
+    todo_id = client.post(
+        f"/api/projects/{pid}/todos", json={"title": "Was done for it"}
+    ).json()["id"]
+    client.post(f"/api/todos/{todo_id}/complete")
+
+    # history is a record: it neither blocks nor gets rewritten
+    assert client.delete(f"/api/projects/{pid}").status_code == 204
+    assert client.get("/api/done").json()[0]["project"] == pid
+
+
+def test_missing_project_is_404(client):
+    assert client.post("/api/projects/nope/complete").status_code == 404
+    assert client.post("/api/projects/nope/reopen").status_code == 404
+    assert client.delete("/api/projects/nope").status_code == 404

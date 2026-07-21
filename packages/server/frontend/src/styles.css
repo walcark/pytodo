@@ -376,7 +376,12 @@ body {
   padding: 0;
 }
 
+/* Row 1 is the head plus its action buttons; the outcome and the expanded body
+   are forced onto their own full-width rows below. */
 .project {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -384,11 +389,44 @@ body {
   padding: 4px 6px 8px;
 }
 
+.project-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.project.done .project-title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.badge.done {
+  background: #d7f0dc;
+  color: #1f7a33;
+}
+
+.project-outcome,
+.project-body {
+  flex-basis: 100%;
+}
+
+.show-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px 2px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .project-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: 0;
   background: transparent;
   color: var(--text);

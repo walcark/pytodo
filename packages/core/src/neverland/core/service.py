@@ -18,12 +18,12 @@ genuinely input-agnostic live in this module.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from . import store, vcs
 from .plan import PlanEntry, PlanStatus
-from .project import Project
+from .project import Project, ProjectState
 from .routine import Routine
 from .todo import Todo, TodoState
 from .vocabulary import RepoConfig, save_repo_config
@@ -35,6 +35,10 @@ from .vocabulary import RepoConfig, save_repo_config
 
 class ServiceError(RuntimeError):
     """Base class for domain refusals a use case can raise."""
+
+
+class ProjectHasActions(ServiceError):
+    """A project being deleted is still referenced by active todos."""
 
 
 class DuplicateValue(ServiceError):
@@ -220,6 +224,70 @@ def add_project(
     """
     project = store.create_project(data_dir, title=title, outcome=outcome, area=area)
     return project, auto_sync(data_dir, cfg, f"project: add {project.title}")
+
+
+def project_actions(data_dir: Path, project_id: str) -> list[Todo]:
+    """Return the *active* todos serving a project.
+
+    Archived todos are deliberately out of scope: they are a record of what was
+    done, and nothing should rewrite them when the project they served is
+    completed or removed.
+    """
+    return [t for t in store.list_active(data_dir) if t.project == project_id]
+
+
+def complete_project(
+    data_dir: Path, cfg: RepoConfig, project: Project
+) -> vcs.SyncResult:
+    """Mark a project as done and sync.
+
+    The outcome is what completes, so the actions still serving it are left
+    alone rather than archived: whether a leftover action became moot or is
+    still worth doing is a judgement call the user makes, not the app. The
+    caller is expected to surface :func:`project_actions` beforehand.
+    """
+    project.state = ProjectState.DONE
+    project.completed = datetime.now().replace(microsecond=0)
+    store.save_project(project)
+    return auto_sync(data_dir, cfg, f"project: done {project.title}")
+
+
+def reopen_project(data_dir: Path, cfg: RepoConfig, project: Project) -> vcs.SyncResult:
+    """Bring a completed project back to active, and sync.
+
+    The undo of :func:`complete_project`, for the outcome ticked off too early.
+    """
+    project.state = ProjectState.ACTIVE
+    project.completed = None
+    store.save_project(project)
+    return auto_sync(data_dir, cfg, f"project: reopen {project.title}")
+
+
+def remove_project(
+    data_dir: Path, cfg: RepoConfig, project: Project, *, detach: bool = False
+) -> vcs.SyncResult:
+    """Delete a project, optionally detaching the actions that serve it.
+
+    Todos reference projects one way, so deleting the *target* is the one
+    direction that can dangle. Rather than allow that, this refuses while active
+    todos still point at the project; ``detach`` clears their ``project`` field
+    first, which keeps the actions but drops the link.
+
+    Raises
+    ------
+    ProjectHasActions
+        If active todos reference the project and ``detach`` is false.
+    """
+    actions = project_actions(data_dir, project.id)
+    if actions and not detach:
+        raise ProjectHasActions(
+            f"{len(actions)} active todo(s) still reference this project"
+        )
+    for todo in actions:
+        todo.project = None
+        store.save_todo(todo)
+    store.delete_project(project)
+    return auto_sync(data_dir, cfg, f"project: del {project.title}")
 
 
 # --------------------------------------------------------------------------- #

@@ -22,7 +22,7 @@ from rich.markup import escape
 
 from neverland.core import service, store, vcs
 from neverland.core.plan import PlanEntry, PlanStatus
-from neverland.core.project import Project
+from neverland.core.project import Project, ProjectState
 from neverland.core.routine import MONTH_NAMES, Freq, Recurrence, Routine
 from neverland.core.settings import read_data_dir, write_data_dir
 from neverland.core.todo import Todo, TodoState, sort_key
@@ -773,11 +773,21 @@ project_app = typer.Typer(help="Outcomes that need more than one action.")
 app.add_typer(project_app, name="project")
 
 
-def _pick_project(data_dir: Path, header: str) -> Project:
-    """Pick one active project via fzf, or exit when there is none."""
+def _pick_project(
+    data_dir: Path, header: str, *, include_done: bool = False
+) -> Project:
+    """Pick one project via fzf, or exit when there is none.
+
+    ``include_done`` widens the pick to completed projects, which deletion and
+    reopening need: they are the operations that apply to a finished outcome.
+    """
     projects = store.list_active_projects(data_dir)
+    if include_done:
+        projects += [
+            p for p in store.list_projects(data_dir) if p.state is ProjectState.DONE
+        ]
     if not projects:
-        _warn("No active projects. Create one with `todo project add`.")
+        _warn("No projects. Create one with `todo project add`.")
         raise typer.Exit(0)
     by_label = {p.title: p for p in projects}
     return by_label[prompt.choose(list(by_label), header=header)]
@@ -831,6 +841,62 @@ def project_add(
     )
     _ok(f"Project: {project.title}")
     _warn("No next action yet: capture one with `todo add --project`.")
+    _emit_sync(sync)
+
+
+@project_app.command("done")
+@handle_errors
+def project_done() -> None:
+    """Complete a project: the outcome closes, its actions stay on your lists."""
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    project = _pick_project(data_dir, "Complete project")
+    actions = service.project_actions(data_dir, project.id)
+    if actions and not prompt.confirm(
+        f"{len(actions)} action(s) still serve this project. Complete anyway?"
+    ):
+        raise prompt.Cancelled()
+    sync = service.complete_project(data_dir, cfg, project)
+    _ok(f"Project completed: {project.title}")
+    _emit_sync(sync)
+
+
+@project_app.command("reopen")
+@handle_errors
+def project_reopen() -> None:
+    """Bring a completed project back to active."""
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    done_projects = [
+        p for p in store.list_projects(data_dir) if p.state is ProjectState.DONE
+    ]
+    if not done_projects:
+        console.print("[grey62]No completed project.[/grey62]")
+        raise typer.Exit(0)
+    by_label = {p.title: p for p in done_projects}
+    project = by_label[prompt.choose(list(by_label), header="Reopen project")]
+    sync = service.reopen_project(data_dir, cfg, project)
+    _ok(f"Project reopened: {project.title}")
+    _emit_sync(sync)
+
+
+@project_app.command("rm")
+@handle_errors
+def project_rm() -> None:
+    """Delete a project, detaching the actions that still reference it."""
+    data_dir = require_data_dir()
+    cfg = load_repo_config(data_dir)
+    project = _pick_project(data_dir, "Delete project", include_done=True)
+    actions = service.project_actions(data_dir, project.id)
+    question = (
+        f"Detach {len(actions)} action(s) and delete {project.title!r}?"
+        if actions
+        else f"Permanently delete {project.title!r}?"
+    )
+    if not prompt.confirm(question):
+        raise prompt.Cancelled()
+    sync = service.remove_project(data_dir, cfg, project, detach=bool(actions))
+    _ok(f"Project deleted: {project.title}")
     _emit_sync(sync)
 
 

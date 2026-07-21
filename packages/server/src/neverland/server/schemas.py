@@ -12,7 +12,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from neverland.core.plan import DayPlan, PlanEntry
-from neverland.core.project import Project
+from neverland.core.project import Project, ProjectState
 from neverland.core.routine import Routine
 from neverland.core.todo import Todo
 
@@ -131,7 +131,8 @@ class ProjectSummaryOut(BaseModel):
             state=project.state.value,
             action_count=actions,
             next_count=nexts,
-            stalled=nexts == 0,
+            # a finished outcome is not stalled, it is simply over
+            stalled=nexts == 0 and project.state is ProjectState.ACTIVE,
         )
 
 

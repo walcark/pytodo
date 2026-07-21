@@ -2,18 +2,22 @@ import { useCallback, useEffect, useState } from 'react'
 
 import {
   captureIntoProject,
+  completeProject,
   createProject,
+  deleteProject,
   getProjects,
   getProjectTodos,
+  reopenProject,
 } from './api.js'
 
 // One project row: its counts, a stalled badge, its serving todos (lazy-loaded
 // on expand), and a capture bar to drop new todos straight into the project.
-function ProjectRow({ project, onCaptured }) {
+function ProjectRow({ project, onCaptured, onError }) {
   const [open, setOpen] = useState(false)
   const [todos, setTodos] = useState(null)
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
+  const done = project.state === 'done'
 
   const loadTodos = useCallback(async () => {
     setTodos(await getProjectTodos(project.id))
@@ -40,19 +44,93 @@ function ProjectRow({ project, onCaptured }) {
     }
   }
 
+  // Actions run through here so a refusal surfaces instead of failing silently.
+  const run = (fn) => async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await fn()
+      onCaptured()
+    } catch (e) {
+      onError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // The outcome closes; its actions stay active, so say so before closing it.
+  const confirmComplete = () =>
+    project.action_count === 0 ||
+    window.confirm(
+      `${project.action_count} action(s) still serve "${project.title}". ` +
+        'They stay on your lists. Complete the project anyway?',
+    )
+
+  // Deleting the target of a reference is the one direction that can dangle,
+  // hence the explicit detach rather than a silent rewrite.
+  const confirmDelete = () =>
+    project.action_count === 0
+      ? window.confirm(`Delete "${project.title}"? This cannot be undone.`)
+      : window.confirm(
+          `${project.action_count} action(s) still reference "${project.title}". ` +
+            'Detach them (they are kept, without a project) and delete?',
+        )
+
   return (
-    <li className="project">
+    <li className={`project${done ? ' done' : ''}${busy ? ' busy' : ''}`}>
       <button type="button" className="project-head" onClick={toggle}>
         <span className="project-caret">{open ? '▾' : '▸'}</span>
         <span className="project-title">{project.title}</span>
         {project.area && <span className="tag area">{project.area}</span>}
-        {project.stalled ? (
+        {done ? (
+          <span className="badge done">done</span>
+        ) : project.stalled ? (
           <span className="badge stalled">stalled</span>
         ) : (
           <span className="badge">{project.next_count} next</span>
         )}
         <span className="project-count">{project.action_count} action(s)</span>
       </button>
+      <div className="project-actions">
+        {done ? (
+          <button
+            type="button"
+            className="row-reopen"
+            title="Reopen"
+            onClick={run(() => reopenProject(project.id))}
+            disabled={busy}
+          >
+            ↩<span className="btn-label"> Reopen</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="check"
+            title="Complete project"
+            aria-label={`Complete ${project.title}`}
+            onClick={run(async () => {
+              if (!confirmComplete()) return
+              await completeProject(project.id)
+            })}
+            disabled={busy}
+          >
+            ✓
+          </button>
+        )}
+        <button
+          type="button"
+          className="row-del"
+          title="Delete project"
+          aria-label={`Delete ${project.title}`}
+          onClick={run(async () => {
+            if (!confirmDelete()) return
+            await deleteProject(project.id, project.action_count > 0)
+          })}
+          disabled={busy}
+        >
+          ✕
+        </button>
+      </div>
       {project.outcome && <p className="project-outcome">{project.outcome}</p>}
       {open && (
         <div className="project-body">
@@ -150,11 +228,12 @@ function CreateProject({ vocab, onCreated }) {
 // each whether it is moving (has a next action) and the todos that serve it.
 export default function Projects({ vocab, onChanged }) {
   const [projects, setProjects] = useState([])
+  const [showDone, setShowDone] = useState(false)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
-    setProjects(await getProjects())
-  }, [])
+    setProjects(await getProjects(showDone))
+  }, [showDone])
 
   useEffect(() => {
     load().catch((e) => setError(String(e)))
@@ -162,6 +241,7 @@ export default function Projects({ vocab, onChanged }) {
 
   // Reload the summaries locally and let the app refresh the shared list too.
   const onChangedHere = () => {
+    setError(null)
     load().catch((e) => setError(String(e)))
     onChanged()
   }
@@ -169,13 +249,26 @@ export default function Projects({ vocab, onChanged }) {
   return (
     <div className="projects">
       <CreateProject vocab={vocab} onCreated={onChangedHere} />
+      <label className="show-done">
+        <input
+          type="checkbox"
+          checked={showDone}
+          onChange={(e) => setShowDone(e.target.checked)}
+        />
+        Show completed
+      </label>
       {error && <p className="error">{error}</p>}
       {projects.length === 0 ? (
         <p className="empty">No active projects yet.</p>
       ) : (
         <ul className="project-list">
           {projects.map((p) => (
-            <ProjectRow key={p.id} project={p} onCaptured={onChangedHere} />
+            <ProjectRow
+              key={p.id}
+              project={p}
+              onCaptured={onChangedHere}
+              onError={setError}
+            />
           ))}
         </ul>
       )}
