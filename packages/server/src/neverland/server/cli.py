@@ -40,6 +40,14 @@ def _run(args: argparse.Namespace) -> int:
         print(f"neverland-server: {exc}", file=sys.stderr)
         return 2
 
+    # Flags win over both the config file and the environment: they are the
+    # most explicit thing the user typed, and a one-off port is exactly what
+    # you reach for when the stored one is already taken.
+    if args.host is not None:
+        config.host = args.host
+    if args.port is not None:
+        config.port = args.port
+
     if not config.is_loopback() and not config.token:
         print(
             f"neverland-server: refusing to bind {config.host} without a token "
@@ -164,6 +172,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser(
         "run", parents=[common], help="Run the web server (foreground)."
+    )
+    run.add_argument(
+        "--host", help=f"Bind address, overriding the config (default: {DEFAULT_HOST})."
+    )
+    run.add_argument(
+        "--port",
+        type=int,
+        help=f"Bind port, overriding the config (default: {DEFAULT_PORT}).",
     )
     run.set_defaults(func=_run)
 

@@ -136,3 +136,37 @@ def test_run_refuses_public_bind_without_token(tmp_path, monkeypatch, host, caps
     else:
         assert rc == 0
         assert started.get("ran")
+
+
+def test_run_port_flag_overrides_config(tmp_path, monkeypatch):
+    # The flag is the most explicit input: it must beat the stored config.
+    config_path = tmp_path / "server.env"
+    deploy.write_env_file(
+        config_path,
+        {"NEVERLAND_SERVER_DATA_DIR": str(tmp_path), "NEVERLAND_SERVER_PORT": "8000"},
+    )
+    for var in ("NEVERLAND_SERVER_HOST", "NEVERLAND_SERVER_PORT"):
+        monkeypatch.delenv(var, raising=False)
+
+    seen = {}
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: seen.update(k))
+
+    rc = cli.main(["run", "--config", str(config_path), "--port", "8123"])
+    assert rc == 0
+    assert seen["port"] == 8123
+
+
+def test_run_host_flag_still_requires_a_token(tmp_path, monkeypatch, capsys):
+    # Overriding the host must not slip past the public-bind guard.
+    config_path = tmp_path / "server.env"
+    deploy.write_env_file(config_path, {"NEVERLAND_SERVER_DATA_DIR": str(tmp_path)})
+    for var in ("NEVERLAND_SERVER_HOST", "NEVERLAND_SERVER_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+
+    started = {}
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: started.setdefault("ran", True))
+
+    rc = cli.main(["run", "--config", str(config_path), "--host", "0.0.0.0"])
+    assert rc == 2
+    assert "ran" not in started
+    assert "without a token" in capsys.readouterr().err
